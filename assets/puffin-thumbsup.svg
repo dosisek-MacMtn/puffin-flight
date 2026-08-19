@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- PLACEHOLDER ART: swap for /brand/puffin-thumbsup.png at integration. -->
+  <g>
+    <ellipse cx="58" cy="74" rx="32" ry="36" fill="#1b1d21"/>
+    <ellipse cx="62" cy="80" rx="24" ry="27" fill="#f7f9fb"/>
+    <circle cx="60" cy="36" r="24" fill="#1b1d21"/>
+    <ellipse cx="66" cy="40" rx="16" ry="17" fill="#f7f9fb"/>
+    <circle cx="70" cy="33" r="3.2" fill="#1b1d21"/>
+    <path d="M78 36 C94 32 98 46 94 52 C86 58 76 54 74 46 Z" fill="#f0872a"/>
+    <path d="M78 36 C86 34 91 36 94 40 C90 46 82 48 76 44 Z" fill="#ffc247"/>
+    <path d="M74 46 C82 52 90 53 95 49 L95 51 C88 56 78 54 74 49 Z" fill="#e2542b"/>
+    <path d="M36 58 C46 50 62 50 70 56 C62 66 46 68 34 64 Z" fill="#1a6fb5"/>
+    <!-- thumbs-up wing -->
+    <path d="M30 78 C18 74 12 60 18 50 C24 46 30 52 30 60 C32 54 40 54 40 62 C40 72 38 80 32 82 Z" fill="#101215"/>
+    <path d="M20 52 C22 48 27 49 27 55 C27 59 25 62 22 62 Z" fill="#f7f9fb" opacity="0.15"/>
+    <path d="M88 76 C98 82 98 94 90 98 C86 90 86 82 86 78 Z" fill="#101215"/>
+    <path d="M48 108 C52 116 62 118 68 114 C64 108 54 106 48 108 Z" fill="#f0872a"/>
+  </g>
+</svg>

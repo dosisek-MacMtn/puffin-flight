@@ -1,0 +1,10 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Dev-only test output (the harnesses in tools/ are committed, their output is not)
+tools/shots/
+node_modules/

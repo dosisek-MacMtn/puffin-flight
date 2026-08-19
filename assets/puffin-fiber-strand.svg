@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- PLACEHOLDER ART: reference for /brand/puffin-fiber-strand.png. Drawn as the collectible strand itself. -->
+  <defs>
+    <radialGradient id="fg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="45%" stop-color="#7fd8ff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#1a6fb5" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="32" r="30" fill="url(#fg)"/>
+  <path d="M14 44 C24 36 26 24 34 16" stroke="#8fe6ff" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M14 44 C24 36 26 24 34 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M30 48 C40 42 44 30 50 22" stroke="#8fe6ff" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <circle cx="34" cy="16" r="4" fill="#ffffff"/>
+  <circle cx="14" cy="44" r="3" fill="#ffffff" opacity="0.85"/>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- PLACEHOLDER ART: swap for /brand/puffin-pointing.png at integration. -->
+  <g>
+    <ellipse cx="56" cy="74" rx="32" ry="36" fill="#1b1d21"/>
+    <ellipse cx="60" cy="80" rx="24" ry="27" fill="#f7f9fb"/>
+    <circle cx="58" cy="36" r="24" fill="#1b1d21"/>
+    <ellipse cx="64" cy="40" rx="16" ry="17" fill="#f7f9fb"/>
+    <circle cx="68" cy="34" r="3.2" fill="#1b1d21"/>
+    <path d="M76 36 C92 32 96 46 92 52 C84 58 74 54 72 46 Z" fill="#f0872a"/>
+    <path d="M76 36 C84 34 89 36 92 40 C88 46 80 48 74 44 Z" fill="#ffc247"/>
+    <path d="M72 46 C80 52 88 53 93 49 L93 51 C86 56 76 54 72 49 Z" fill="#e2542b"/>
+    <path d="M34 58 C44 50 60 50 68 56 C60 66 44 68 32 64 Z" fill="#1a6fb5"/>
+    <!-- pointing wing, up and to the right -->
+    <path d="M84 70 C96 58 106 44 112 34 L104 30 C96 42 86 54 76 62 Z" fill="#101215"/>
+    <circle cx="110" cy="30" r="6" fill="#101215"/>
+    <!-- resting wing -->
+    <path d="M30 72 C20 78 20 92 30 96 C34 88 34 80 34 74 Z" fill="#101215"/>
+    <path d="M44 108 C48 116 58 118 64 114 C60 108 50 106 44 108 Z" fill="#f0872a"/>
+  </g>
+</svg>

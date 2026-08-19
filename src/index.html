@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b6b6e">
+<meta name="description" content="Puffin Flight — a one-button game from GWI. Fly the puffin, dodge the buoys, collect fiber. Swim, Fly, Soar.">
+<meta name="robots" content="index, follow">
+<title>Puffin Flight — GWI</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6b6e'/%3E%3Cellipse cx='15' cy='19' rx='9' ry='7' fill='%231b1d21'/%3E%3Cellipse cx='17' cy='21' rx='6' ry='5' fill='%23f7f9fb'/%3E%3Ccircle cx='21' cy='12' r='6' fill='%231b1d21'/%3E%3Ccircle cx='23' cy='13' r='4' fill='%23f7f9fb'/%3E%3Cpath d='M26 11l5 2-5 2z' fill='%23f0872a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="pf-root">
+  <div id="pf-stage">
+    <canvas id="pf-canvas" role="img" aria-label="Puffin Flight playfield"></canvas>
+
+    <!-- Title -->
+    <section class="pf-screen" id="pf-title" aria-label="Puffin Flight title screen">
+      <img class="pf-logo" id="pf-logo-title" alt="GWI" width="200" height="56">
+      <h1>PUFFIN FLIGHT</h1>
+      <div class="pf-art-row">
+        <img class="pf-art" id="pf-art-pointing" alt="" width="120" height="120">
+        <p>&ldquo;No contracts. No data caps. No games.&rdquo;*<br><span class="pf-fine">*OK, fine. One game.</span></p>
+      </div>
+      <p class="pf-hint pf-bob">Tap, click or press SPACE to flap</p>
+      <p class="pf-fine">Best: <span id="pf-title-high">0 Mbps</span></p>
+      <button class="pf-btn" id="pf-play" type="button">Take Flight</button>
+    </section>
+
+    <!-- Paused -->
+    <section class="pf-screen" id="pf-paused" hidden aria-label="Paused">
+      <h2>Paused</h2>
+      <p class="pf-fine">Press P or tap Resume to get back in the air.</p>
+      <button class="pf-btn" id="pf-resume" type="button">Resume</button>
+    </section>
+
+    <!-- Game over -->
+    <section class="pf-screen" id="pf-over" hidden aria-label="Run over">
+      <span class="pf-badge" id="pf-record" hidden>New personal best!</span>
+      <div class="pf-art-row">
+        <img class="pf-art" id="pf-art-thumbsup" alt="" width="120" height="120">
+        <div>
+          <h2>Wiped out!</h2>
+          <div class="pf-speed" id="pf-final">0 Mbps</div>
+        </div>
+      </div>
+      <p id="pf-over-copy">You hit 0 Mbps! GWI customers get up to 2 Gbps without the seagulls.</p>
+      <p class="pf-fine">Best: <span id="pf-over-high">0 Mbps</span></p>
+      <div class="pf-row">
+        <button class="pf-btn" id="pf-again" type="button">Fly Again</button>
+        <button class="pf-btn pf-btn--ghost" id="pf-share" type="button">Share</button>
+      </div>
+      <p class="pf-fine" id="pf-share-note" role="status"></p>
+      <img class="pf-logo" id="pf-logo-over" alt="GWI" width="200" height="56">
+    </section>
+
+    <div class="pf-corner">
+      <button class="pf-btn" id="pf-pause" type="button" hidden>Pause</button>
+      <button class="pf-btn" id="pf-sound" type="button" aria-pressed="false">Sound on</button>
+    </div>
+
+    <p class="pf-sr" id="pf-live" role="status" aria-live="polite"></p>
+  </div>
+</div>
+
+<!-- BUILD:ASSETS:START -->
+<script>
+window.PF_ASSETS = {
+  flying: '../assets/puffin-flying.svg',
+  pointing: '../assets/puffin-pointing.svg',
+  thumbsup: '../assets/puffin-thumbsup.svg',
+  logo: '../assets/gwi-logo.svg'
+};
+</script>
+<!-- BUILD:ASSETS:END -->
+<script src="stages.js"></script>
+<script src="entities.js"></script>
+<script src="render.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+<script>
+(function () {
+  function boot() { window.PF.start(window.PF_ASSETS); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+/* Puffin Flight — layout and screen chrome.
+ * The canvas sits inside a 16:9 frame; the page background is the letterbox.
+ * No web fonts, no external assets: everything here is self-contained.
+ */
+
+:root {
+  --gwi-blue: #1a6fb5;        /* TODO(brand): confirm against live gwi.net CSS */
+  --gwi-blue-light: #2a8fd8;
+  --gwi-ink: #0d1720;
+  --gwi-paper: #f7fbff;
+  --gwi-orange: #f0872a;
+  --pf-font: "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #061018;
+  color: var(--gwi-paper);
+  font-family: var(--pf-font);
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#pf-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: radial-gradient(circle at 50% 40%, #10314a 0%, #061018 75%);
+  /* The whole surface is the flap target — see bindInput(). */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The playfield frame: always 16:9, always as large as it can be. */
+#pf-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: min(100%, calc(100vh * 16 / 9));
+  max-height: min(100%, calc(100vw * 9 / 16));
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#pf-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* --------------------------------------------------------------- screens -- */
+
+.pf-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.6%;
+  padding: 4% 6%;
+  text-align: center;
+  container-type: inline-size;
+}
+.pf-screen[hidden] { display: none; }
+
+/* Type scales with the frame so it reads the same on a phone and a desktop. */
+.pf-screen h1 {
+  margin: 0;
+  font-size: clamp(22px, 7cqw, 64px);
+  letter-spacing: 0.06em;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
+}
+.pf-screen h2 {
+  margin: 0;
+  font-size: clamp(18px, 5cqw, 40px);
+  letter-spacing: 0.03em;
+}
+.pf-screen p {
+  margin: 0;
+  font-size: clamp(11px, 2.3cqw, 19px);
+  line-height: 1.45;
+  max-width: 34em;
+  color: rgba(255, 255, 255, 0.92);
+}
+.pf-fine { color: rgba(255, 255, 255, 0.72); font-size: clamp(10px, 1.9cqw, 15px); }
+.pf-speed {
+  font-size: clamp(28px, 9cqw, 76px);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+}
+.pf-hint { color: var(--gwi-orange); font-weight: 700; letter-spacing: 0.08em; }
+
+.pf-logo { width: clamp(78px, 18cqw, 168px); height: auto; opacity: 0.95; }
+.pf-art { width: clamp(56px, 14cqw, 128px); height: auto; }
+.pf-art-row { display: flex; align-items: center; justify-content: center; gap: 3cqw; }
+
+.pf-badge {
+  display: inline-block;
+  padding: 0.35em 0.9em;
+  border-radius: 999px;
+  background: var(--gwi-orange);
+  color: #21140a;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-size: clamp(11px, 2.2cqw, 17px);
+}
+.pf-badge[hidden] { display: none; }
+
+/* --------------------------------------------------------------- buttons -- */
+
+.pf-btn {
+  font-family: inherit;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  font-size: clamp(13px, 2.6cqw, 21px);
+  color: #ffffff;
+  background: var(--gwi-blue);
+  border: none;
+  border-bottom: 4px solid rgba(0, 0, 0, 0.28);
+  border-radius: 999px;
+  padding: 0.7em 1.8em;
+  min-height: 44px;
+  min-width: 44px;
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+.pf-btn:hover { background: var(--gwi-blue-light); }
+.pf-btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+.pf-btn:focus-visible { outline: 3px solid #ffd873; outline-offset: 3px; }
+.pf-btn--ghost {
+  background: rgba(255, 255, 255, 0.12);
+  border-bottom-color: rgba(0, 0, 0, 0.2);
+}
+.pf-btn--ghost:hover { background: rgba(255, 255, 255, 0.22); }
+
+.pf-row { display: flex; flex-wrap: wrap; gap: 2cqw; align-items: center; justify-content: center; }
+
+/* Corner controls live inside the playfield, clear of the canvas HUD. */
+.pf-corner {
+  position: absolute;
+  bottom: 3%;
+  right: 2.5%;
+  display: flex;
+  gap: 8px;
+  z-index: 3;
+}
+.pf-corner .pf-btn {
+  font-size: clamp(11px, 1.8cqw, 15px);
+  padding: 0.5em 1.1em;
+  background: rgba(6, 16, 24, 0.55);
+  border-bottom-color: rgba(0, 0, 0, 0.25);
+}
+.pf-corner .pf-btn:hover { background: rgba(6, 16, 24, 0.75); }
+.pf-corner .pf-btn[hidden] { display: none; }
+
+/* Visually hidden, still announced by screen readers. */
+.pf-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Gentle idle nudge on the title hint; removed for reduced motion. */
+@keyframes pf-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.pf-bob { animation: pf-bob 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-bob { animation: none; }
+  .pf-btn { transition: none; }
+}

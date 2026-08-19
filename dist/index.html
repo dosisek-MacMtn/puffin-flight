@@ -1,0 +1,2379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b6b6e">
+<meta name="description" content="Puffin Flight — a one-button game from GWI. Fly the puffin, dodge the buoys, collect fiber. Swim, Fly, Soar.">
+<meta name="robots" content="index, follow">
+<title>Puffin Flight — GWI</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6b6e'/%3E%3Cellipse cx='15' cy='19' rx='9' ry='7' fill='%231b1d21'/%3E%3Cellipse cx='17' cy='21' rx='6' ry='5' fill='%23f7f9fb'/%3E%3Ccircle cx='21' cy='12' r='6' fill='%231b1d21'/%3E%3Ccircle cx='23' cy='13' r='4' fill='%23f7f9fb'/%3E%3Cpath d='M26 11l5 2-5 2z' fill='%23f0872a'/%3E%3C/svg%3E">
+<style>
+/* Puffin Flight — layout and screen chrome.
+ * The canvas sits inside a 16:9 frame; the page background is the letterbox.
+ * No web fonts, no external assets: everything here is self-contained.
+ */
+
+:root {
+  --gwi-blue: #1a6fb5;        /* TODO(brand): confirm against live gwi.net CSS */
+  --gwi-blue-light: #2a8fd8;
+  --gwi-ink: #0d1720;
+  --gwi-paper: #f7fbff;
+  --gwi-orange: #f0872a;
+  --pf-font: "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #061018;
+  color: var(--gwi-paper);
+  font-family: var(--pf-font);
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#pf-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: radial-gradient(circle at 50% 40%, #10314a 0%, #061018 75%);
+  /* The whole surface is the flap target — see bindInput(). */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The playfield frame: always 16:9, always as large as it can be. */
+#pf-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: min(100%, calc(100vh * 16 / 9));
+  max-height: min(100%, calc(100vw * 9 / 16));
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#pf-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* --------------------------------------------------------------- screens -- */
+
+.pf-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.6%;
+  padding: 4% 6%;
+  text-align: center;
+  container-type: inline-size;
+}
+.pf-screen[hidden] { display: none; }
+
+/* Type scales with the frame so it reads the same on a phone and a desktop. */
+.pf-screen h1 {
+  margin: 0;
+  font-size: clamp(22px, 7cqw, 64px);
+  letter-spacing: 0.06em;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
+}
+.pf-screen h2 {
+  margin: 0;
+  font-size: clamp(18px, 5cqw, 40px);
+  letter-spacing: 0.03em;
+}
+.pf-screen p {
+  margin: 0;
+  font-size: clamp(11px, 2.3cqw, 19px);
+  line-height: 1.45;
+  max-width: 34em;
+  color: rgba(255, 255, 255, 0.92);
+}
+.pf-fine { color: rgba(255, 255, 255, 0.72); font-size: clamp(10px, 1.9cqw, 15px); }
+.pf-speed {
+  font-size: clamp(28px, 9cqw, 76px);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+}
+.pf-hint { color: var(--gwi-orange); font-weight: 700; letter-spacing: 0.08em; }
+
+.pf-logo { width: clamp(78px, 18cqw, 168px); height: auto; opacity: 0.95; }
+.pf-art { width: clamp(56px, 14cqw, 128px); height: auto; }
+.pf-art-row { display: flex; align-items: center; justify-content: center; gap: 3cqw; }
+
+.pf-badge {
+  display: inline-block;
+  padding: 0.35em 0.9em;
+  border-radius: 999px;
+  background: var(--gwi-orange);
+  color: #21140a;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-size: clamp(11px, 2.2cqw, 17px);
+}
+.pf-badge[hidden] { display: none; }
+
+/* --------------------------------------------------------------- buttons -- */
+
+.pf-btn {
+  font-family: inherit;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  font-size: clamp(13px, 2.6cqw, 21px);
+  color: #ffffff;
+  background: var(--gwi-blue);
+  border: none;
+  border-bottom: 4px solid rgba(0, 0, 0, 0.28);
+  border-radius: 999px;
+  padding: 0.7em 1.8em;
+  min-height: 44px;
+  min-width: 44px;
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+.pf-btn:hover { background: var(--gwi-blue-light); }
+.pf-btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+.pf-btn:focus-visible { outline: 3px solid #ffd873; outline-offset: 3px; }
+.pf-btn--ghost {
+  background: rgba(255, 255, 255, 0.12);
+  border-bottom-color: rgba(0, 0, 0, 0.2);
+}
+.pf-btn--ghost:hover { background: rgba(255, 255, 255, 0.22); }
+
+.pf-row { display: flex; flex-wrap: wrap; gap: 2cqw; align-items: center; justify-content: center; }
+
+/* Corner controls live inside the playfield, clear of the canvas HUD. */
+.pf-corner {
+  position: absolute;
+  bottom: 3%;
+  right: 2.5%;
+  display: flex;
+  gap: 8px;
+  z-index: 3;
+}
+.pf-corner .pf-btn {
+  font-size: clamp(11px, 1.8cqw, 15px);
+  padding: 0.5em 1.1em;
+  background: rgba(6, 16, 24, 0.55);
+  border-bottom-color: rgba(0, 0, 0, 0.25);
+}
+.pf-corner .pf-btn:hover { background: rgba(6, 16, 24, 0.75); }
+.pf-corner .pf-btn[hidden] { display: none; }
+
+/* Visually hidden, still announced by screen readers. */
+.pf-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Gentle idle nudge on the title hint; removed for reduced motion. */
+@keyframes pf-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.pf-bob { animation: pf-bob 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-bob { animation: none; }
+  .pf-btn { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<div id="pf-root">
+  <div id="pf-stage">
+    <canvas id="pf-canvas" role="img" aria-label="Puffin Flight playfield"></canvas>
+
+    <!-- Title -->
+    <section class="pf-screen" id="pf-title" aria-label="Puffin Flight title screen">
+      <img class="pf-logo" id="pf-logo-title" alt="GWI" width="200" height="56">
+      <h1>PUFFIN FLIGHT</h1>
+      <div class="pf-art-row">
+        <img class="pf-art" id="pf-art-pointing" alt="" width="120" height="120">
+        <p>&ldquo;No contracts. No data caps. No games.&rdquo;*<br><span class="pf-fine">*OK, fine. One game.</span></p>
+      </div>
+      <p class="pf-hint pf-bob">Tap, click or press SPACE to flap</p>
+      <p class="pf-fine">Best: <span id="pf-title-high">0 Mbps</span></p>
+      <button class="pf-btn" id="pf-play" type="button">Take Flight</button>
+    </section>
+
+    <!-- Paused -->
+    <section class="pf-screen" id="pf-paused" hidden aria-label="Paused">
+      <h2>Paused</h2>
+      <p class="pf-fine">Press P or tap Resume to get back in the air.</p>
+      <button class="pf-btn" id="pf-resume" type="button">Resume</button>
+    </section>
+
+    <!-- Game over -->
+    <section class="pf-screen" id="pf-over" hidden aria-label="Run over">
+      <span class="pf-badge" id="pf-record" hidden>New personal best!</span>
+      <div class="pf-art-row">
+        <img class="pf-art" id="pf-art-thumbsup" alt="" width="120" height="120">
+        <div>
+          <h2>Wiped out!</h2>
+          <div class="pf-speed" id="pf-final">0 Mbps</div>
+        </div>
+      </div>
+      <p id="pf-over-copy">You hit 0 Mbps! GWI customers get up to 2 Gbps without the seagulls.</p>
+      <p class="pf-fine">Best: <span id="pf-over-high">0 Mbps</span></p>
+      <div class="pf-row">
+        <button class="pf-btn" id="pf-again" type="button">Fly Again</button>
+        <button class="pf-btn pf-btn--ghost" id="pf-share" type="button">Share</button>
+      </div>
+      <p class="pf-fine" id="pf-share-note" role="status"></p>
+      <img class="pf-logo" id="pf-logo-over" alt="GWI" width="200" height="56">
+    </section>
+
+    <div class="pf-corner">
+      <button class="pf-btn" id="pf-pause" type="button" hidden>Pause</button>
+      <button class="pf-btn" id="pf-sound" type="button" aria-pressed="false">Sound on</button>
+    </div>
+
+    <p class="pf-sr" id="pf-live" role="status" aria-live="polite"></p>
+  </div>
+</div>
+
+<script>
+window.PF_ASSETS = {"flying":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgOTYiIHdpZHRoPSIxMjAiIGhlaWdodD0iOTYiPgogIDwhLS0gUExBQ0VIT0xERVIgQVJUOiBzd2FwIGZvciAvYnJhbmQvcHVmZmluLWZseWluZy5wbmcgYXQgaW50ZWdyYXRpb24uIC0tPgogIDxnPgogICAgPCEtLSB0cmFpbGluZyBzY2FyZiAtLT4KICAgIDxwYXRoIGQ9Ik0zNCA0NiBDMjAgNDAgMTAgNDYgMiA0MCBDMTAgNTIgMTggNTIgMjYgNTQgWiIgZmlsbD0iIzFhNmZiNSIvPgogICAgPHBhdGggZD0iTTMyIDU0IEMyMCA1NiAxMiA2NCA0IDYyIEMxNCA2OCAyNCA2NiAzMiA2MiBaIiBmaWxsPSIjMmE4ZmQ4Ii8+CiAgICA8IS0tIHRhaWwgLS0+CiAgICA8cGF0aCBkPSJNMjYgNTAgQzE2IDQ0IDE0IDU2IDI0IDYwIFoiIGZpbGw9IiMxNTE3MWEiLz4KICAgIDwhLS0gYm9keSAtLT4KICAgIDxlbGxpcHNlIGN4PSI2MCIgY3k9IjUyIiByeD0iMzQiIHJ5PSIyNiIgZmlsbD0iIzFiMWQyMSIvPgogICAgPCEtLSB3aGl0ZSBiZWxseSAtLT4KICAgIDxlbGxpcHNlIGN4PSI2NiIgY3k9IjU4IiByeD0iMjYiIHJ5PSIxOSIgZmlsbD0iI2Y3ZjlmYiIvPgogICAgPCEtLSBoZWFkIC0tPgogICAgPGNpcmNsZSBjeD0iODYiIGN5PSIzOCIgcj0iMjAiIGZpbGw9IiMxYjFkMjEiLz4KICAgIDwhLS0gZmFjZSBwYXRjaCAtLT4KICAgIDxlbGxpcHNlIGN4PSI5MyIgY3k9IjQxIiByeD0iMTMiIHJ5PSIxNCIgZmlsbD0iI2Y3ZjlmYiIvPgogICAgPCEtLSBiZWFrIC0tPgogICAgPHBhdGggZD0iTTEwNCAzNiBDMTE4IDMyIDEyMCA0NCAxMTggNDggQzExMiA1NCAxMDIgNTIgMTAwIDQ2IFoiIGZpbGw9IiNmMDg3MmEiLz4KICAgIDxwYXRoIGQ9Ik0xMDQgMzYgQzExMCAzNCAxMTQgMzUgMTE3IDM4IEMxMTQgNDQgMTA4IDQ2IDEwMiA0MyBaIiBmaWxsPSIjZmZjMjQ3Ii8+CiAgICA8cGF0aCBkPSJNMTAwIDQ2IEMxMDYgNTAgMTEyIDUxIDExOCA0OCBMMTE4IDUwIEMxMTEgNTQgMTAzIDUyIDEwMCA0OCBaIiBmaWxsPSIjZTI1NDJiIi8+CiAgICA8IS0tIGdvZ2dsZXMgLS0+CiAgICA8cGF0aCBkPSJNNzAgMzAgQzc4IDIyIDk0IDIwIDEwNCAyNiBMMTA0IDMyIEM5NCAyNyA4MCAyOSA3MiAzNSBaIiBmaWxsPSIjNGEzNTI0Ii8+CiAgICA8Y2lyY2xlIGN4PSI5NCIgY3k9IjMxIiByPSI4IiBmaWxsPSIjM2EyYTFjIi8+CiAgICA8Y2lyY2xlIGN4PSI5NCIgY3k9IjMxIiByPSI1LjUiIGZpbGw9IiM4ZmQ4ZmYiIG9wYWNpdHk9IjAuOTUiLz4KICAgIDxwYXRoIGQ9Ik05MCAyOCBDOTIgMjYgOTUgMjYgOTcgMjcgQzk0IDI4IDkyIDI5IDkwIDMxIFoiIGZpbGw9IiNmZmZmZmYiIG9wYWNpdHk9IjAuODUiLz4KICAgIDwhLS0gd2luZyAtLT4KICAgIDxwYXRoIGQ9Ik01MiA0MCBDNDAgMzAgMjYgMzIgMjIgNDIgQzMyIDQ2IDQwIDUwIDUwIDU2IFoiIGZpbGw9IiMxMDEyMTUiLz4KICAgIDwhLS0gc2NhcmYga25vdCBhdCBuZWNrIC0tPgogICAgPHBhdGggZD0iTTU2IDM4IEM2NCAzMiA3NiAzMiA4MiAzOCBDNzYgNDggNjIgNTAgNTQgNDYgWiIgZmlsbD0iIzFhNmZiNSIvPgogICAgPHBhdGggZD0iTTU2IDM4IEM2NCAzNCA3NCAzNCA4MCAzOCBDNzQgNDIgNjQgNDMgNTYgNDEgWiIgZmlsbD0iIzJhOGZkOCIgb3BhY2l0eT0iMC43Ii8+CiAgICA8IS0tIGZlZXQgLS0+CiAgICA8cGF0aCBkPSJNNTggNzQgQzYyIDgwIDcwIDgyIDc2IDc4IEM3MiA3NCA2NCA3MiA1OCA3NCBaIiBmaWxsPSIjZjA4NzJhIi8+CiAgPC9nPgo8L3N2Zz4K","pointing":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIiB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCI+CiAgPCEtLSBQTEFDRUhPTERFUiBBUlQ6IHN3YXAgZm9yIC9icmFuZC9wdWZmaW4tcG9pbnRpbmcucG5nIGF0IGludGVncmF0aW9uLiAtLT4KICA8Zz4KICAgIDxlbGxpcHNlIGN4PSI1NiIgY3k9Ijc0IiByeD0iMzIiIHJ5PSIzNiIgZmlsbD0iIzFiMWQyMSIvPgogICAgPGVsbGlwc2UgY3g9IjYwIiBjeT0iODAiIHJ4PSIyNCIgcnk9IjI3IiBmaWxsPSIjZjdmOWZiIi8+CiAgICA8Y2lyY2xlIGN4PSI1OCIgY3k9IjM2IiByPSIyNCIgZmlsbD0iIzFiMWQyMSIvPgogICAgPGVsbGlwc2UgY3g9IjY0IiBjeT0iNDAiIHJ4PSIxNiIgcnk9IjE3IiBmaWxsPSIjZjdmOWZiIi8+CiAgICA8Y2lyY2xlIGN4PSI2OCIgY3k9IjM0IiByPSIzLjIiIGZpbGw9IiMxYjFkMjEiLz4KICAgIDxwYXRoIGQ9Ik03NiAzNiBDOTIgMzIgOTYgNDYgOTIgNTIgQzg0IDU4IDc0IDU0IDcyIDQ2IFoiIGZpbGw9IiNmMDg3MmEiLz4KICAgIDxwYXRoIGQ9Ik03NiAzNiBDODQgMzQgODkgMzYgOTIgNDAgQzg4IDQ2IDgwIDQ4IDc0IDQ0IFoiIGZpbGw9IiNmZmMyNDciLz4KICAgIDxwYXRoIGQ9Ik03MiA0NiBDODAgNTIgODggNTMgOTMgNDkgTDkzIDUxIEM4NiA1NiA3NiA1NCA3MiA0OSBaIiBmaWxsPSIjZTI1NDJiIi8+CiAgICA8cGF0aCBkPSJNMzQgNTggQzQ0IDUwIDYwIDUwIDY4IDU2IEM2MCA2NiA0NCA2OCAzMiA2NCBaIiBmaWxsPSIjMWE2ZmI1Ii8+CiAgICA8IS0tIHBvaW50aW5nIHdpbmcsIHVwIGFuZCB0byB0aGUgcmlnaHQgLS0+CiAgICA8cGF0aCBkPSJNODQgNzAgQzk2IDU4IDEwNiA0NCAxMTIgMzQgTDEwNCAzMCBDOTYgNDIgODYgNTQgNzYgNjIgWiIgZmlsbD0iIzEwMTIxNSIvPgogICAgPGNpcmNsZSBjeD0iMTEwIiBjeT0iMzAiIHI9IjYiIGZpbGw9IiMxMDEyMTUiLz4KICAgIDwhLS0gcmVzdGluZyB3aW5nIC0tPgogICAgPHBhdGggZD0iTTMwIDcyIEMyMCA3OCAyMCA5MiAzMCA5NiBDMzQgODggMzQgODAgMzQgNzQgWiIgZmlsbD0iIzEwMTIxNSIvPgogICAgPHBhdGggZD0iTTQ0IDEwOCBDNDggMTE2IDU4IDExOCA2NCAxMTQgQzYwIDEwOCA1MCAxMDYgNDQgMTA4IFoiIGZpbGw9IiNmMDg3MmEiLz4KICA8L2c+Cjwvc3ZnPgo=","thumbsup":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIiB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCI+CiAgPCEtLSBQTEFDRUhPTERFUiBBUlQ6IHN3YXAgZm9yIC9icmFuZC9wdWZmaW4tdGh1bWJzdXAucG5nIGF0IGludGVncmF0aW9uLiAtLT4KICA8Zz4KICAgIDxlbGxpcHNlIGN4PSI1OCIgY3k9Ijc0IiByeD0iMzIiIHJ5PSIzNiIgZmlsbD0iIzFiMWQyMSIvPgogICAgPGVsbGlwc2UgY3g9IjYyIiBjeT0iODAiIHJ4PSIyNCIgcnk9IjI3IiBmaWxsPSIjZjdmOWZiIi8+CiAgICA8Y2lyY2xlIGN4PSI2MCIgY3k9IjM2IiByPSIyNCIgZmlsbD0iIzFiMWQyMSIvPgogICAgPGVsbGlwc2UgY3g9IjY2IiBjeT0iNDAiIHJ4PSIxNiIgcnk9IjE3IiBmaWxsPSIjZjdmOWZiIi8+CiAgICA8Y2lyY2xlIGN4PSI3MCIgY3k9IjMzIiByPSIzLjIiIGZpbGw9IiMxYjFkMjEiLz4KICAgIDxwYXRoIGQ9Ik03OCAzNiBDOTQgMzIgOTggNDYgOTQgNTIgQzg2IDU4IDc2IDU0IDc0IDQ2IFoiIGZpbGw9IiNmMDg3MmEiLz4KICAgIDxwYXRoIGQ9Ik03OCAzNiBDODYgMzQgOTEgMzYgOTQgNDAgQzkwIDQ2IDgyIDQ4IDc2IDQ0IFoiIGZpbGw9IiNmZmMyNDciLz4KICAgIDxwYXRoIGQ9Ik03NCA0NiBDODIgNTIgOTAgNTMgOTUgNDkgTDk1IDUxIEM4OCA1NiA3OCA1NCA3NCA0OSBaIiBmaWxsPSIjZTI1NDJiIi8+CiAgICA8cGF0aCBkPSJNMzYgNTggQzQ2IDUwIDYyIDUwIDcwIDU2IEM2MiA2NiA0NiA2OCAzNCA2NCBaIiBmaWxsPSIjMWE2ZmI1Ii8+CiAgICA8IS0tIHRodW1icy11cCB3aW5nIC0tPgogICAgPHBhdGggZD0iTTMwIDc4IEMxOCA3NCAxMiA2MCAxOCA1MCBDMjQgNDYgMzAgNTIgMzAgNjAgQzMyIDU0IDQwIDU0IDQwIDYyIEM0MCA3MiAzOCA4MCAzMiA4MiBaIiBmaWxsPSIjMTAxMjE1Ii8+CiAgICA8cGF0aCBkPSJNMjAgNTIgQzIyIDQ4IDI3IDQ5IDI3IDU1IEMyNyA1OSAyNSA2MiAyMiA2MiBaIiBmaWxsPSIjZjdmOWZiIiBvcGFjaXR5PSIwLjE1Ii8+CiAgICA8cGF0aCBkPSJNODggNzYgQzk4IDgyIDk4IDk0IDkwIDk4IEM4NiA5MCA4NiA4MiA4NiA3OCBaIiBmaWxsPSIjMTAxMjE1Ii8+CiAgICA8cGF0aCBkPSJNNDggMTA4IEM1MiAxMTYgNjIgMTE4IDY4IDExNCBDNjQgMTA4IDU0IDEwNiA0OCAxMDggWiIgZmlsbD0iI2YwODcyYSIvPgogIDwvZz4KPC9zdmc+Cg==","logo":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgNTYiIHdpZHRoPSIyMDAiIGhlaWdodD0iNTYiPgogIDwhLS0gUExBQ0VIT0xERVIgV09SRE1BUks6IHN3YXAgZm9yIHRoZSByZWFsIC9icmFuZC9nd2ktbG9nby5wbmcgYmVmb3JlIGxhdW5jaC4gLS0+CiAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjE5OCIgaGVpZ2h0PSI1NCIgcng9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiMxYTZmYjUiIHN0cm9rZS13aWR0aD0iMiIvPgogIDx0ZXh0IHg9IjIwIiB5PSIzOCIgZm9udC1mYW1pbHk9IlZlcmRhbmEsRGVqYVZ1IFNhbnMsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iIzFhNmZiNSIgbGV0dGVyLXNwYWNpbmc9IjIiPkdXSTwvdGV4dD4KICA8dGV4dCB4PSI5MiIgeT0iMjYiIGZvbnQtZmFtaWx5PSJWZXJkYW5hLERlamFWdSBTYW5zLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiMyYThmZDgiPlBVRkZJTiBGQVNUPC90ZXh0PgogIDx0ZXh0IHg9IjkyIiB5PSI0MiIgZm9udC1mYW1pbHk9IlZlcmRhbmEsRGVqYVZ1IFNhbnMsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzJhOGZkOCI+RklCRVI8L3RleHQ+Cjwvc3ZnPgo="};
+</script>
+<script>
+/* Puffin Flight — stage + difficulty configuration.
+ *
+ * EVERYTHING A NON-DEV MIGHT WANT TO TWEAK LIVES IN PF.CONFIG BELOW.
+ * Gap sizes, speeds, spawn rates, stage thresholds, palettes and copy are all
+ * here; no game logic in this file.
+ */
+(function (PF) {
+  'use strict';
+
+  PF.CONFIG = {
+    /* Logical playfield. All game math uses these coordinates; the renderer
+     * scales/letterboxes to whatever the container is. 16:9. */
+    world: { width: 960, height: 540 },
+
+    puffin: {
+      x: 250,            // fixed horizontal position, logical px
+      radius: 19,        // collision radius (forgiving vs. the drawn sprite)
+      spriteW: 84,
+      spriteH: 67,
+      tiltUp: -0.42,     // radians at full rise
+      tiltDown: 0.85     // radians at full fall
+    },
+
+    scoring: {
+      fiberBonus: 25,        // Mbps per fiber strand
+      bufferPenalty: 50,     // Mbps drained by the Big Cable buffering wheel
+      gbpsThreshold: 1000,   // display flips to Gbps here
+      highScoreKey: 'gwi-puffin-highscore'
+    },
+
+    buffering: {
+      duration: 2.0,      // seconds of "buffering..."
+      speedFactor: 0.55,  // scroll + score rate multiplier while buffering
+      stutterHz: 2.5      // visual stutter rate (kept under 3 Hz: photosensitivity)
+    },
+
+    router: {
+      duration: 3.0,      // seconds of invincibility
+      speedFactor: 1.25,  // scroll + score rate multiplier while boosted
+      spawnChance: 0.07   // chance a pickup slot spawns a router instead of fiber
+    },
+
+    transition: {
+      bannerTime: 2.2,    // seconds the "You've unlocked FLY!" banner shows
+      blendTime: 1.1      // seconds to lerp physics/palette between stages
+    },
+
+    /* Stage order matters: thresholds must ascend. Stage names are the GWI
+     * residential plan names and must stay SWIM / FLY / SOAR. */
+    stages: [
+      {
+        id: 'SWIM',
+        threshold: 0,
+        tagline: 'Underwater. Puffins really do swim.',
+        scoreRate: 20,        // Mbps gained per second survived
+        scroll: 200,          // logical px per second
+        gravity: 820,         // px/s^2 — buoyant
+        flap: -300,           // px/s impulse
+        maxFall: 360,
+        maxRise: -420,
+        gapMin: 208,
+        gapMax: 248,
+        spawnInterval: 1.85,  // seconds between obstacle groups
+        bufferChance: 0.10,   // chance a group is a buffering wheel instead
+        fiberChance: 0.72,    // chance a group carries a pickup
+        obstacles: ['kelp', 'rock', 'buoy'],
+        palette: {
+          skyTop: '#04303a', skyBottom: '#0b6b6e', haze: '#1fa3a0',
+          far: '#0a4d55', near: '#0d3b45', accent: '#5fe3d0',
+          hud: '#eafcff', obstacle: '#1c7f63', obstacleEdge: '#6ff0d6'
+        }
+      },
+      {
+        id: 'FLY',
+        threshold: 500,
+        tagline: 'Maine coast. Mind the gulls.',
+        scoreRate: 25,
+        scroll: 250,          // +25% vs SWIM
+        gravity: 1500,
+        flap: -430,
+        maxFall: 650,
+        maxRise: -560,
+        gapMin: 182,
+        gapMax: 210,
+        spawnInterval: 1.55,
+        bufferChance: 0.13,
+        fiberChance: 0.66,
+        obstacles: ['lighthouse', 'buoy', 'gull'],
+        palette: {
+          skyTop: '#67c6f2', skyBottom: '#d6f0fb', haze: '#ffffff',
+          far: '#7fa8bd', near: '#2f5d70', accent: '#ffc247',
+          hud: '#123448', obstacle: '#e9edf0', obstacleEdge: '#c2ccd4'
+        }
+      },
+      {
+        id: 'SOAR',
+        threshold: 1000,
+        tagline: 'Supersonic. Two gigs of altitude.',
+        scoreRate: 32,
+        scroll: 300,          // +50% vs SWIM
+        gravity: 1700,
+        flap: -470,
+        maxFall: 760,
+        maxRise: -620,
+        gapMin: 168,
+        gapMax: 192,
+        spawnInterval: 1.35,
+        bufferChance: 0.15,
+        fiberChance: 0.62,
+        obstacles: ['gull', 'rock'],
+        palette: {
+          skyTop: '#0b1f5c', skyBottom: '#4aa6e8', haze: '#bfe6ff',
+          far: '#7fb6e8', near: '#2b5da8', accent: '#ffd873',
+          hud: '#f2f9ff', obstacle: '#dfe9f5', obstacleEdge: '#9fb6cf'
+        }
+      }
+    ],
+
+    /* All player-facing copy. G-rated, short, GWI tone. */
+    copy: {
+      title: 'PUFFIN FLIGHT',
+      subline: '"No contracts. No data caps. No games."*',
+      subline2: '*OK, fine. One game.',
+      tapToFlap: 'Tap to flap',
+      tapToFlapDesktop: 'Tap, click or press SPACE to flap',
+      buffering: 'Buffering... (this is what Big Cable feels like)',
+      bigCable: 'Big Cable',
+      unlocked: function (stage) { return "You've unlocked " + stage + '!'; },
+      gameOverTitle: 'Wiped out!',
+      gameOver: function (speed) {
+        return 'You hit ' + speed + '! GWI customers get up to 2 Gbps without the seagulls.';
+      },
+      newRecord: 'New personal best!',
+      playAgain: 'Fly Again',
+      share: function (speed, url) {
+        return 'I hit ' + speed + ' in Puffin Flight. Beat that. ' + url;
+      },
+      shareTitle: 'Puffin Flight'
+    }
+  };
+
+  /* Which stage index a (peak) score belongs to. Stage never walks backwards —
+   * game.js feeds this the peak score so a buffering hit can't demote you. */
+  PF.stageIndexFor = function (score) {
+    var stages = PF.CONFIG.stages;
+    var idx = 0;
+    for (var i = 0; i < stages.length; i++) {
+      if (score >= stages[i].threshold) idx = i;
+    }
+    return idx;
+  };
+
+  /* Score -> display string. Mbps until 1000, then Gbps with one decimal. */
+  PF.formatSpeed = function (score) {
+    var s = Math.max(0, Math.floor(score));
+    if (s >= PF.CONFIG.scoring.gbpsThreshold) {
+      return (Math.floor(s / 100) / 10).toFixed(1) + ' Gbps';
+    }
+    return s + ' Mbps';
+  };
+})(window.PF = window.PF || {});
+</script>
+<script>
+/* Puffin Flight — entities and the world that owns them.
+ *
+ * Everything here is pooled: obstacles, pickups and particles are recycled
+ * rather than allocated per spawn, so a long run doesn't sawtooth the GC.
+ * All motion is delta-time based; nothing is tied to frame count.
+ */
+(function (PF) {
+  'use strict';
+
+  var C = PF.CONFIG;
+  var W = C.world.width;
+  var H = C.world.height;
+
+  /* ---------------------------------------------------------------- pool -- */
+
+  function Pool(factory, initial) {
+    this.factory = factory;
+    this.free = [];
+    this.alive = [];
+    for (var i = 0; i < (initial || 0); i++) this.free.push(factory());
+  }
+  Pool.prototype.acquire = function () {
+    var o = this.free.length ? this.free.pop() : this.factory();
+    this.alive.push(o);
+    return o;
+  };
+  Pool.prototype.releaseAt = function (i) {
+    var o = this.alive[i];
+    this.alive[i] = this.alive[this.alive.length - 1];
+    this.alive.pop();
+    this.free.push(o);
+    return o;
+  };
+  Pool.prototype.clear = function () {
+    while (this.alive.length) this.free.push(this.alive.pop());
+  };
+  PF.Pool = Pool;
+
+  /* --------------------------------------------------------------- puffin -- */
+
+  function Puffin() {
+    this.reset();
+  }
+  Puffin.prototype.reset = function () {
+    this.x = C.puffin.x;
+    this.y = H * 0.45;
+    this.vy = 0;
+    this.rot = 0;
+    this.alive = true;
+    this.flapAge = 99;          // seconds since last flap (drives wing pose)
+    this.trail = [];            // scarf trail sample points
+    this.trailTimer = 0;
+    this.glow = 0;              // router power-up glow, 0..1
+  };
+  Puffin.prototype.flap = function (phys) {
+    this.vy = phys.flap;
+    this.flapAge = 0;
+  };
+  Puffin.prototype.update = function (dt, phys, timeScale) {
+    this.flapAge += dt;
+    this.vy += phys.gravity * dt * timeScale;
+    if (this.vy > phys.maxFall) this.vy = phys.maxFall;
+    if (this.vy < phys.maxRise) this.vy = phys.maxRise;
+    this.y += this.vy * dt * timeScale;
+
+    // Tilt toward velocity, eased so it never snaps.
+    var t = this.vy / (this.vy < 0 ? -phys.maxRise : phys.maxFall);
+    var target = t < 0 ? C.puffin.tiltUp * -t : C.puffin.tiltDown * t;
+    this.rot += (target - this.rot) * Math.min(1, dt * 9);
+
+    // Scarf trail: fixed-rate samples, independent of frame rate.
+    this.trailTimer += dt;
+    while (this.trailTimer >= 0.02) {
+      this.trailTimer -= 0.02;
+      this.trail.unshift({ x: this.x - 26, y: this.y + 4, life: 1 });
+      if (this.trail.length > 14) this.trail.pop();
+    }
+    for (var i = 0; i < this.trail.length; i++) {
+      this.trail[i].life -= dt * 2.4;
+      this.trail[i].x -= dt * 40;
+    }
+  };
+  PF.Puffin = Puffin;
+
+  /* ------------------------------------------------------------- factories -- */
+
+  function newObstacle() {
+    return {
+      kind: '', variant: '', x: 0, w: 0, gapY: 0, gapH: 0,
+      hasTop: true, hasBottom: true, y: 0, r: 0, baseY: 0, amp: 0,
+      freq: 0, phase: 0, speedMul: 1, spin: 0, used: false,
+      scored: false, seed: 0, dead: false
+    };
+  }
+  function newPickup() {
+    return { kind: 'fiber', x: 0, y: 0, r: 0, baseY: 0, amp: 0, phase: 0, taken: false, spin: 0 };
+  }
+  function newParticle() {
+    return {
+      kind: '', x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1,
+      size: 1, rot: 0, spin: 0, color: '#fff', gravity: 0
+    };
+  }
+
+  /* ---------------------------------------------------------------- world -- */
+
+  function World() {
+    this.obstacles = new Pool(newObstacle, 16);
+    this.pickups = new Pool(newPickup, 12);
+    this.particles = new Pool(newParticle, 160);
+    this.puffin = new Puffin();
+    this.time = 0;
+    this.lastGapY = H * 0.5;
+    this.distance = 0;
+  }
+
+  World.prototype.reset = function () {
+    this.obstacles.clear();
+    this.pickups.clear();
+    this.particles.clear();
+    this.puffin.reset();
+    this.time = 0;
+    this.distance = 0;
+    this.lastGapY = H * 0.5;
+  };
+
+  /* Spawn one obstacle group (plus an optional pickup) just off the right edge. */
+  World.prototype.spawnGroup = function (stage, rand) {
+    var r = rand || Math.random;
+    var spawnX = W + 90;
+
+    // Buffering wheel groups replace an obstacle group entirely — they are the
+    // comedy beat, not an extra thing to dodge on top of a wall.
+    if (r() < stage.bufferChance) {
+      var b = this.obstacles.acquire();
+      b.kind = 'buffer';
+      b.variant = 'buffer';
+      b.x = spawnX;
+      b.r = 30;
+      b.baseY = 90 + r() * (H - 220);
+      b.y = b.baseY;
+      b.amp = 26;
+      b.freq = 0.7 + r() * 0.4;
+      b.phase = r() * Math.PI * 2;
+      b.speedMul = 1;
+      b.spin = 0;
+      b.used = false;
+      b.dead = false;
+      b.scored = false;
+      b.seed = r();
+      return;
+    }
+
+    var kinds = stage.obstacles;
+    var kind = kinds[Math.floor(r() * kinds.length)];
+
+    if (kind === 'gull') {
+      var g = this.obstacles.acquire();
+      g.kind = 'gull';
+      g.variant = 'gull';
+      g.x = spawnX;
+      g.r = 22;
+      g.baseY = 110 + r() * (H - 260);
+      g.y = g.baseY;
+      g.amp = 40 + r() * 45;
+      g.freq = 0.9 + r() * 0.6;
+      g.phase = r() * Math.PI * 2;
+      g.speedMul = 1.3;
+      g.dead = false;
+      g.used = false;
+      g.scored = false;
+      g.seed = r();
+      this.maybePickup(stage, r, spawnX + 190, 90 + r() * (H - 200));
+      return;
+    }
+
+    if (kind === 'buoy') {
+      var y = 120 + r() * (H - 260);
+      var bo = this.obstacles.acquire();
+      bo.kind = 'buoy';
+      bo.variant = 'buoy';
+      bo.x = spawnX;
+      bo.r = 21;
+      bo.baseY = y;
+      bo.y = y;
+      bo.amp = 30 + r() * 26;
+      bo.freq = 0.45 + r() * 0.3;
+      bo.phase = r() * Math.PI * 2;
+      bo.speedMul = 1;
+      bo.dead = false;
+      bo.used = false;
+      bo.scored = false;
+      bo.seed = r();
+      this.maybePickup(stage, r, spawnX + 200, 90 + r() * (H - 200));
+      return;
+    }
+
+    // Column-style: kelp, rock spire, lighthouse top.
+    var gapH = stage.gapMin + r() * (stage.gapMax - stage.gapMin);
+    var margin = 56;
+    var min = gapH / 2 + margin;
+    var max = H - gapH / 2 - margin;
+    // Keep consecutive gaps reachable: cap the vertical jump between groups.
+    var gapY = this.lastGapY + (r() * 2 - 1) * 165;
+    if (gapY < min) gapY = min;
+    if (gapY > max) gapY = max;
+    this.lastGapY = gapY;
+
+    var o = this.obstacles.acquire();
+    o.kind = 'column';
+    o.variant = kind;
+    o.x = spawnX;
+    o.w = kind === 'lighthouse' ? 78 : 68;
+    o.gapY = gapY;
+    o.gapH = gapH;
+    // A lighthouse rises from the bottom only; fly over it.
+    o.hasTop = kind !== 'lighthouse';
+    o.hasBottom = true;
+    o.speedMul = 1;
+    o.dead = false;
+    o.used = false;
+    o.scored = false;
+    o.seed = r();
+
+    if (!o.hasTop) {
+      // Bottom-only: size a real tower (not a stub) and derive the gap from it,
+      // so collision and art agree and there is clear sky above.
+      var towerH = 150 + r() * 130;
+      var top = H - towerH;
+      o.gapY = top - gapH / 2;
+      if (o.gapY < gapH / 2 + 40) o.gapY = gapH / 2 + 40;
+    }
+
+    this.maybePickup(stage, r, spawnX + o.w / 2, o.gapY);
+  };
+
+  World.prototype.maybePickup = function (stage, r, x, y) {
+    if (r() > stage.fiberChance) return;
+    var p = this.pickups.acquire();
+    var isRouter = r() < C.router.spawnChance;
+    p.kind = isRouter ? 'router' : 'fiber';
+    p.x = x;
+    p.baseY = Math.max(70, Math.min(H - 70, y));
+    p.y = p.baseY;
+    p.r = isRouter ? 20 : 15;
+    p.amp = 9;
+    p.phase = r() * Math.PI * 2;
+    p.taken = false;
+    p.spin = 0;
+  };
+
+  /* ------------------------------------------------------------ particles -- */
+
+  World.prototype.emit = function (kind, x, y, count, opts) {
+    opts = opts || {};
+    for (var i = 0; i < count; i++) {
+      var p = this.particles.acquire();
+      p.kind = kind;
+      p.x = x + (Math.random() * 2 - 1) * (opts.spread || 6);
+      p.y = y + (Math.random() * 2 - 1) * (opts.spread || 6);
+      var ang = opts.angle == null ? Math.random() * Math.PI * 2 : opts.angle + (Math.random() * 2 - 1) * (opts.arc || 0.7);
+      var spd = (opts.speed || 90) * (0.4 + Math.random() * 0.8);
+      p.vx = Math.cos(ang) * spd + (opts.vx || 0);
+      p.vy = Math.sin(ang) * spd + (opts.vy || 0);
+      p.maxLife = (opts.life || 0.6) * (0.6 + Math.random() * 0.7);
+      p.life = p.maxLife;
+      p.size = (opts.size || 5) * (0.5 + Math.random());
+      p.rot = Math.random() * Math.PI * 2;
+      p.spin = (Math.random() * 2 - 1) * 6;
+      p.gravity = opts.gravity || 0;
+      p.color = opts.color || '#ffffff';
+    }
+  };
+
+  /* --------------------------------------------------------------- update -- */
+
+  World.prototype.update = function (dt, scroll, reducedMotion) {
+    this.time += dt;
+    this.distance += scroll * dt;
+    var t = this.time;
+    var i, o, p;
+
+    var obs = this.obstacles.alive;
+    for (i = obs.length - 1; i >= 0; i--) {
+      o = obs[i];
+      o.x -= scroll * dt * o.speedMul;
+      if (o.kind === 'buoy' || o.kind === 'gull' || o.kind === 'buffer') {
+        o.y = o.baseY + Math.sin(t * o.freq * Math.PI + o.phase) * o.amp;
+      }
+      if (o.kind === 'buffer') o.spin += dt * 3.2;
+      var right = o.kind === 'column' ? o.x + o.w : o.x + o.r;
+      if (right < -40) this.obstacles.releaseAt(i);
+    }
+
+    var picks = this.pickups.alive;
+    for (i = picks.length - 1; i >= 0; i--) {
+      p = picks[i];
+      p.x -= scroll * dt;
+      p.y = p.baseY + Math.sin(t * 2.2 + p.phase) * p.amp;
+      p.spin += dt * 2;
+      if (p.x + p.r < -30 || p.taken) this.pickups.releaseAt(i);
+    }
+
+    var parts = this.particles.alive;
+    var cap = reducedMotion ? 90 : 400;
+    for (i = parts.length - 1; i >= 0; i--) {
+      p = parts[i];
+      p.life -= dt;
+      if (p.life <= 0 || parts.length > cap && p.life < p.maxLife * 0.4) {
+        this.particles.releaseAt(i);
+        continue;
+      }
+      p.vy += p.gravity * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += p.spin * dt;
+    }
+  };
+
+  /* ----------------------------------------------------------- collisions -- */
+
+  function circleHit(ax, ay, ar, bx, by, br) {
+    var dx = ax - bx, dy = ay - by, rr = ar + br;
+    return dx * dx + dy * dy <= rr * rr;
+  }
+  function circleRect(cx, cy, cr, rx, ry, rw, rh) {
+    var nx = cx < rx ? rx : (cx > rx + rw ? rx + rw : cx);
+    var ny = cy < ry ? ry : (cy > ry + rh ? ry + rh : cy);
+    var dx = cx - nx, dy = cy - ny;
+    return dx * dx + dy * dy <= cr * cr;
+  }
+
+  /* Returns a list of events: {type:'lethal'|'buffer'|'fiber'|'router', obj}.
+   * Pickups are consumed here; lethal hits are reported, not applied. */
+  World.prototype.collide = function (invincible) {
+    var events = [];
+    var pu = this.puffin;
+    var pr = C.puffin.radius;
+    var i, o, p;
+
+    var obs = this.obstacles.alive;
+    for (i = 0; i < obs.length; i++) {
+      o = obs[i];
+      if (o.kind === 'column') {
+        if (invincible) continue;
+        if (o.hasTop && circleRect(pu.x, pu.y, pr, o.x, -10, o.w, o.gapY - o.gapH / 2 + 10)) {
+          events.push({ type: 'lethal', obj: o });
+          break;
+        }
+        var by = o.gapY + o.gapH / 2;
+        if (o.hasBottom && circleRect(pu.x, pu.y, pr, o.x, by, o.w, H - by + 10)) {
+          events.push({ type: 'lethal', obj: o });
+          break;
+        }
+      } else if (o.kind === 'buffer') {
+        if (!o.used && circleHit(pu.x, pu.y, pr, o.x, o.y, o.r * 0.85)) {
+          o.used = true;
+          events.push({ type: 'buffer', obj: o });
+        }
+      } else {
+        if (invincible) continue;
+        if (circleHit(pu.x, pu.y, pr, o.x, o.y, o.r * 0.82)) {
+          events.push({ type: 'lethal', obj: o });
+          break;
+        }
+      }
+    }
+
+    var picks = this.pickups.alive;
+    for (i = 0; i < picks.length; i++) {
+      p = picks[i];
+      if (p.taken) continue;
+      if (circleHit(pu.x, pu.y, pr + 6, p.x, p.y, p.r)) {
+        p.taken = true;
+        events.push({ type: p.kind, obj: p });
+      }
+    }
+    return events;
+  };
+
+  /* Left the playfield? Ceiling is forgiving, the floor is not. */
+  World.prototype.outOfBounds = function () {
+    var pu = this.puffin;
+    return pu.y > H - C.puffin.radius || pu.y < -80;
+  };
+
+  PF.World = World;
+  PF.createWorld = function () { return new World(); };
+})(window.PF = window.PF || {});
+</script>
+<script>
+/* Puffin Flight — canvas rendering.
+ *
+ * The game always draws in a fixed 960x540 logical space; the renderer scales
+ * and letterboxes that into whatever box the page gives it, so the same code
+ * works in portrait, landscape, desktop and inside an iframe.
+ */
+(function (PF) {
+  'use strict';
+
+  var C = PF.CONFIG;
+  var W = C.world.width;
+  var H = C.world.height;
+
+  /* ---------------------------------------------------------------- color -- */
+
+  function hexToRgb(hex) {
+    var h = hex.replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  var rgbCache = {};
+  function rgb(hex) {
+    if (!rgbCache[hex]) rgbCache[hex] = hexToRgb(hex);
+    return rgbCache[hex];
+  }
+  function hex2(n) { return (n < 16 ? '0' : '') + n.toString(16); }
+  /* Returns hex, not rgb(): the result is fed back into rgba()/rgb(), which
+   * parse hex only. */
+  function mix(a, b, t) {
+    var ca = rgb(a), cb = rgb(b);
+    return '#' +
+      hex2(Math.round(ca[0] + (cb[0] - ca[0]) * t)) +
+      hex2(Math.round(ca[1] + (cb[1] - ca[1]) * t)) +
+      hex2(Math.round(ca[2] + (cb[2] - ca[2]) * t));
+  }
+  function rgba(hex, a) {
+    var c = rgb(hex);
+    return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')';
+  }
+  PF.mixColor = mix;
+
+  /* Perceived brightness 0..1 — used to pick a contrasting text outline. */
+  PF.luminance = function (hex) {
+    var c = rgb(hex);
+    return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+  };
+
+  /* --------------------------------------------------------------- assets -- */
+
+  var assets = {};
+  PF.loadAssets = function (sources, done) {
+    var keys = Object.keys(sources);
+    var pending = keys.length;
+    if (!pending) { done(); return; }
+    keys.forEach(function (k) {
+      var img = new Image();
+      img.onload = img.onerror = function () {
+        pending--;
+        if (pending === 0) done();
+      };
+      img.src = sources[k];
+      assets[k] = img;
+    });
+  };
+  PF.getAsset = function (k) { return assets[k]; };
+  function drawable(img) { return img && img.complete && img.naturalWidth > 0; }
+
+  /* ------------------------------------------------------------- renderer -- */
+
+  function Renderer(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.dpr = 1;
+    this.scale = 1;
+    this.offX = 0;
+    this.offY = 0;
+    this.cssW = 0;
+    this.cssH = 0;
+    this.resize();
+  }
+
+  Renderer.prototype.resize = function () {
+    var rect = this.canvas.parentNode.getBoundingClientRect();
+    var cssW = Math.max(1, Math.round(rect.width));
+    var cssH = Math.max(1, Math.round(rect.height));
+    // Cap the backing store on very dense displays: 60fps beats extra pixels.
+    var dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    this.cssW = cssW;
+    this.cssH = cssH;
+    this.dpr = dpr;
+    this.canvas.width = Math.round(cssW * dpr);
+    this.canvas.height = Math.round(cssH * dpr);
+    this.canvas.style.width = cssW + 'px';
+    this.canvas.style.height = cssH + 'px';
+    this.scale = Math.min(cssW / W, cssH / H);
+    this.offX = (cssW - W * this.scale) / 2;
+    this.offY = (cssH - H * this.scale) / 2;
+  };
+
+  /* Set up the frame: paint the letterbox, then clip to the playfield. */
+  Renderer.prototype.begin = function (letterboxColor) {
+    var ctx = this.ctx;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.fillStyle = letterboxColor;
+    ctx.fillRect(0, 0, this.cssW, this.cssH);
+    ctx.save();
+    ctx.translate(this.offX, this.offY);
+    ctx.scale(this.scale, this.scale);
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+  };
+  Renderer.prototype.end = function () { this.ctx.restore(); };
+
+  /* ---------------------------------------------------------- backgrounds -- */
+
+  function wrap(v, span) { return ((v % span) + span) % span; }
+
+  function drawSwim(ctx, s, alpha) {
+    var p = s.palette, d = s.distance, t = s.time;
+    ctx.globalAlpha = alpha;
+
+    // Light shafts from the surface.
+    if (!s.reducedMotion) {
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.12;
+      for (var i = 0; i < 5; i++) {
+        var sx = wrap(i * 240 - d * 0.06 + Math.sin(t * 0.2 + i) * 20, 1200) - 120;
+        ctx.fillStyle = p.haze;
+        ctx.beginPath();
+        ctx.moveTo(sx, -10);
+        ctx.lineTo(sx + 70, -10);
+        ctx.lineTo(sx + 190, H + 10);
+        ctx.lineTo(sx + 30, H + 10);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // Far kelp forest.
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.fillStyle = p.far;
+    for (var k = 0; k < 9; k++) {
+      var x = wrap(k * 150 - d * 0.25, 1350) - 100;
+      var h = 150 + ((k * 37) % 120);
+      kelpBlade(ctx, x, H, h * 1.6, 26, t * 0.6 + k);
+    }
+    // Near rocks along the seabed.
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.fillStyle = p.near;
+    ctx.beginPath();
+    ctx.moveTo(-10, H + 10);
+    for (var rx = -10; rx <= W + 40; rx += 40) {
+      var ry = H - 26 - Math.sin((rx + d * 0.5) * 0.012) * 16 - ((rx * 7) % 13);
+      ctx.lineTo(rx, ry);
+    }
+    ctx.lineTo(W + 40, H + 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function kelpBlade(ctx, x, baseY, h, w, phase) {
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, baseY);
+    for (var y = 0; y <= h; y += 24) {
+      ctx.lineTo(x - w / 2 + Math.sin(y * 0.02 + phase) * 14, baseY - y);
+    }
+    for (var y2 = h; y2 >= 0; y2 -= 24) {
+      ctx.lineTo(x + w / 2 + Math.sin(y2 * 0.02 + phase) * 14, baseY - y2);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawFly(ctx, s, alpha) {
+    var p = s.palette, d = s.distance, t = s.time;
+    ctx.globalAlpha = alpha;
+
+    // Sun.
+    ctx.fillStyle = rgba(p.accent, 0.55);
+    ctx.beginPath();
+    ctx.arc(W - 150, 96, 40, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Clouds, slowest layer.
+    ctx.fillStyle = rgba(p.haze, 0.75);
+    for (var i = 0; i < 6; i++) {
+      var cx = wrap(i * 230 - d * 0.1, 1380) - 120;
+      var cy = 60 + ((i * 53) % 90);
+      puff(ctx, cx, cy, 34 + (i % 3) * 10);
+    }
+
+    // Headland with lighthouse silhouettes.
+    ctx.globalAlpha = alpha * 0.75;
+    ctx.fillStyle = p.far;
+    for (var j = 0; j < 5; j++) {
+      var hx = wrap(j * 320 - d * 0.28, 1600) - 160;
+      ctx.beginPath();
+      ctx.moveTo(hx - 120, H - 96);
+      ctx.quadraticCurveTo(hx, H - 190, hx + 130, H - 96);
+      ctx.closePath();
+      ctx.fill();
+      if (j % 2 === 0) {
+        // Stand the lighthouse on the headland; based any higher it floats.
+        ctx.fillRect(hx - 8, H - 212, 18, 96);
+        ctx.beginPath();
+        ctx.moveTo(hx - 14, H - 212);
+        ctx.lineTo(hx + 1, H - 230);
+        ctx.lineTo(hx + 16, H - 212);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Sea.
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.near;
+    ctx.beginPath();
+    ctx.moveTo(0, H - 88);
+    for (var wx = 0; wx <= W; wx += 30) {
+      ctx.lineTo(wx, H - 88 + Math.sin((wx + d * 0.9) * 0.02 + t) * 6);
+    }
+    ctx.lineTo(W, H + 10);
+    ctx.lineTo(0, H + 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function puff(ctx, x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(x + r * 0.8, y + 6, r * 0.72, 0, Math.PI * 2);
+    ctx.arc(x - r * 0.85, y + 8, r * 0.62, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSoar(ctx, s, alpha) {
+    var p = s.palette, d = s.distance, t = s.time;
+    ctx.globalAlpha = alpha;
+
+    // Faint stars up high (static brightness — nothing strobes).
+    ctx.fillStyle = rgba('#ffffff', 0.55);
+    for (var i = 0; i < 34; i++) {
+      var sx = wrap(i * 97 - d * 0.03, 1000);
+      var sy = ((i * 61) % 240) + 10;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+
+    // Cloud tops far below.
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.fillStyle = rgba(p.haze, 0.8);
+    for (var j = 0; j < 7; j++) {
+      var cx = wrap(j * 200 - d * 0.2, 1400) - 100;
+      puff(ctx, cx, H - 60 + ((j * 29) % 40), 46);
+    }
+
+    // Motion streaks.
+    if (!s.reducedMotion) {
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.strokeStyle = p.haze;
+      ctx.lineWidth = 2;
+      for (var k = 0; k < 16; k++) {
+        var lx = wrap(k * 130 - d * 1.6, 1200) - 120;
+        var ly = ((k * 83) % (H - 60)) + 20;
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(lx + 90, ly);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  var LAYERS = { SWIM: drawSwim, FLY: drawFly, SOAR: drawSoar };
+
+  /* Blend the two stages' palettes so transitions never pop. */
+  PF.blendPalette = function (a, b, t) {
+    var out = {};
+    for (var k in a) {
+      if (Object.prototype.hasOwnProperty.call(a, k)) out[k] = mix(a[k], b[k], t);
+    }
+    return out;
+  };
+
+  Renderer.prototype.drawBackground = function (s) {
+    var ctx = this.ctx;
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, s.palette.skyTop);
+    g.addColorStop(1, s.palette.skyBottom);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    var from = LAYERS[s.fromStage.id];
+    var to = LAYERS[s.toStage.id];
+    if (from === to || s.blend >= 1) {
+      to(ctx, s, 1);
+    } else {
+      from(ctx, s, 1 - s.blend);
+      to(ctx, s, s.blend);
+    }
+  };
+
+  /* ------------------------------------------------------------ obstacles -- */
+
+  Renderer.prototype.drawObstacles = function (world, s) {
+    var ctx = this.ctx;
+    var list = world.obstacles.alive;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o.kind === 'column') this.drawColumn(o, s);
+      else if (o.kind === 'buoy') this.drawBuoy(o, s);
+      else if (o.kind === 'gull') this.drawGull(o, s);
+      else if (o.kind === 'buffer') this.drawBuffer(o, s);
+    }
+  };
+
+  Renderer.prototype.drawColumn = function (o, s) {
+    var ctx = this.ctx;
+    var topH = o.gapY - o.gapH / 2;
+    var botY = o.gapY + o.gapH / 2;
+    if (o.variant === 'kelp') {
+      ctx.fillStyle = s.palette.obstacle;
+      ctx.strokeStyle = s.palette.obstacleEdge;
+      ctx.lineWidth = 3;
+      if (o.hasTop) kelpColumn(ctx, o.x, o.w, -10, topH + 10, s.time, o.seed, true);
+      if (o.hasBottom) kelpColumn(ctx, o.x, o.w, botY, H - botY + 10, s.time, o.seed, false);
+    } else if (o.variant === 'rock') {
+      ctx.fillStyle = s.palette.obstacle;
+      ctx.strokeStyle = s.palette.obstacleEdge;
+      ctx.lineWidth = 3;
+      if (o.hasTop) spire(ctx, o.x, o.w, -10, topH + 10, true, o.seed);
+      if (o.hasBottom) spire(ctx, o.x, o.w, botY, H - botY + 10, false, o.seed);
+    } else {
+      // Lighthouse: bottom only, white tower with a red band and a lantern room.
+      var y = botY, h = H - botY + 10;
+      ctx.fillStyle = s.palette.obstacle;
+      ctx.strokeStyle = s.palette.obstacleEdge;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(o.x + 6, y + 26);
+      ctx.lineTo(o.x + o.w - 6, y + 26);
+      ctx.lineTo(o.x + o.w, y + h);
+      ctx.lineTo(o.x, y + h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#d3453c';
+      ctx.fillRect(o.x + 7, y + 60, o.w - 14, 22);
+      ctx.fillRect(o.x + 2, y + 12, o.w - 4, 16);
+      ctx.fillStyle = '#2a3742';
+      ctx.fillRect(o.x + 14, y + 26, o.w - 28, 14);
+      ctx.fillStyle = rgba('#ffd873', 0.95);
+      ctx.beginPath();
+      ctx.arc(o.x + o.w / 2, y + 20, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
+  function kelpColumn(ctx, x, w, y, h, t, seed, flip) {
+    var sway = Math.sin(t * 0.9 + seed * 6) * 7;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    var steps = Math.max(2, Math.floor(h / 26));
+    for (var i = 0; i <= steps; i++) {
+      var yy = y + (flip ? h - (h / steps) * i : (h / steps) * i);
+      var off = Math.sin(i * 0.8 + t + seed * 5) * 6 + (flip ? sway * (i / steps) : sway * (1 - i / steps));
+      ctx.lineTo(x + off, yy);
+    }
+    for (var j = steps; j >= 0; j--) {
+      var yy2 = y + (flip ? h - (h / steps) * j : (h / steps) * j);
+      var off2 = Math.sin(j * 0.8 + t + seed * 5) * 6 + (flip ? sway * (j / steps) : sway * (1 - j / steps));
+      ctx.lineTo(x + w + off2, yy2);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  function spire(ctx, x, w, y, h, pointDown, seed) {
+    var tipX = x + w / 2 + (seed - 0.5) * 10;
+    ctx.beginPath();
+    if (pointDown) {
+      ctx.moveTo(x - 4, y);
+      ctx.lineTo(x + w + 4, y);
+      ctx.lineTo(x + w - 6, y + h - 30);
+      ctx.lineTo(tipX, y + h);
+      ctx.lineTo(x + 6, y + h - 30);
+    } else {
+      ctx.moveTo(tipX, y);
+      ctx.lineTo(x + w - 6, y + 30);
+      ctx.lineTo(x + w + 4, y + h);
+      ctx.lineTo(x - 4, y + h);
+      ctx.lineTo(x + 6, y + 30);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  Renderer.prototype.drawBuoy = function (o, s) {
+    var ctx = this.ctx;
+    // Rope: decorative only, never lethal.
+    ctx.strokeStyle = rgba('#f4e7c8', 0.5);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(o.x, o.y);
+    ctx.lineTo(o.x + Math.sin(s.time + o.phase) * 8, s.toStage.id === 'SWIM' ? -20 : H + 20);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.fillStyle = '#e8503f';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, o.r * 0.85, o.r, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#f7f3ea';
+    ctx.fillRect(-o.r * 0.85, -6, o.r * 1.7, 8);
+    ctx.fillStyle = '#2a3742';
+    ctx.fillRect(-3, -o.r - 9, 6, 12);
+    ctx.restore();
+  };
+
+  Renderer.prototype.drawGull = function (o, s) {
+    var ctx = this.ctx;
+    // Wings keep a visible sweep through the whole flap cycle — a gull that
+    // flattens to a sliver is a lethal obstacle you can't see coming.
+    var flap = Math.sin(s.time * 7 + o.phase);
+    var tip = -10 + flap * 12;
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.strokeStyle = '#5d6b78';
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = '#ffffff';
+
+    ctx.beginPath();
+    ctx.moveTo(-30, tip);
+    ctx.quadraticCurveTo(-14, tip + 4, -3, 2);
+    ctx.lineTo(-3, 9);
+    ctx.quadraticCurveTo(-16, 10, -30, tip + 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(30, tip);
+    ctx.quadraticCurveTo(14, tip + 4, 3, 2);
+    ctx.lineTo(3, 9);
+    ctx.quadraticCurveTo(16, 10, 30, tip + 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 13, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-11, -1, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Beak points the way it's travelling.
+    ctx.fillStyle = '#f0872a';
+    ctx.beginPath();
+    ctx.moveTo(-15, -3);
+    ctx.lineTo(-27, 0);
+    ctx.lineTo(-15, 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#2a3742';
+    ctx.beginPath();
+    ctx.arc(-12, -3, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  Renderer.prototype.drawBuffer = function (o, s) {
+    var ctx = this.ctx;
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.globalAlpha = o.used ? 0.35 : 1;
+
+    ctx.fillStyle = rgba('#0d1720', 0.55);
+    ctx.beginPath();
+    ctx.arc(0, 0, o.r + 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Spinner: a gapped ring, rotating steadily. No strobing.
+    ctx.rotate(o.spin);
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    for (var i = 0; i < 8; i++) {
+      ctx.rotate(Math.PI / 4);
+      ctx.strokeStyle = rgba('#ffffff', 0.2 + (i / 8) * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(0, -o.r + 7);
+      ctx.lineTo(0, -o.r + 1);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Label — text, not colour alone.
+    ctx.save();
+    ctx.globalAlpha = o.used ? 0.3 : 0.92;
+    ctx.font = '700 15px ' + PF.FONT;
+    ctx.textAlign = 'center';
+    var label = C.copy.bigCable;
+    var tw = ctx.measureText(label).width;
+    // Nudge the label so it stays readable when the wheel is at a screen edge.
+    var lx = Math.max(tw / 2 + 12, Math.min(W - tw / 2 - 12, o.x));
+    ctx.translate(lx, o.y);
+    ctx.fillStyle = rgba('#0d1720', 0.6);
+    roundRect(ctx, -tw / 2 - 8, o.r + 8, tw + 16, 22, 8);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, 0, o.r + 24);
+    ctx.restore();
+  };
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  PF.roundRect = roundRect;
+
+  /* -------------------------------------------------------------- pickups -- */
+
+  Renderer.prototype.drawPickups = function (world, s) {
+    var ctx = this.ctx;
+    var list = world.pickups.alive;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      if (p.kind === 'fiber') {
+        var glow = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r * 2.1);
+        glow.addColorStop(0, 'rgba(255,255,255,0.95)');
+        glow.addColorStop(0.45, 'rgba(127,216,255,0.5)');
+        glow.addColorStop(1, 'rgba(26,111,181,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r * 2.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.rotate(Math.sin(p.spin) * 0.3);
+        ctx.strokeStyle = '#8fe6ff';
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-10, 11);
+        ctx.quadraticCurveTo(2, 0, 10, -12);
+        ctx.stroke();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else {
+        ctx.rotate(Math.sin(p.spin) * 0.15);
+        ctx.fillStyle = rgba('#2a8fd8', 0.35);
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r * 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#12212e';
+        roundRect(ctx, -p.r, -p.r * 0.55, p.r * 2, p.r * 1.1, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#2a8fd8';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-6, -p.r * 0.55);
+        ctx.lineTo(-11, -p.r * 1.5);
+        ctx.moveTo(6, -p.r * 0.55);
+        ctx.lineTo(11, -p.r * 1.5);
+        ctx.stroke();
+        ctx.fillStyle = '#5fe3d0';
+        ctx.fillRect(-p.r + 5, -2, 5, 4);
+        ctx.fillRect(-p.r + 14, -2, 5, 4);
+      }
+      ctx.restore();
+    }
+  };
+
+  /* ------------------------------------------------------------ particles -- */
+
+  Renderer.prototype.drawParticles = function (world) {
+    var ctx = this.ctx;
+    var list = world.particles.alive;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      var a = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = a;
+      if (p.kind === 'bubble') {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (p.kind === 'star') {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        star(ctx, p.size * 1.6);
+        ctx.restore();
+      } else if (p.kind === 'streak') {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = p.size * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + p.size * 4, p.y);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  function star(ctx, r) {
+    ctx.beginPath();
+    for (var i = 0; i < 10; i++) {
+      var rad = i % 2 ? r * 0.45 : r;
+      var a = (Math.PI / 5) * i - Math.PI / 2;
+      ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /* --------------------------------------------------------------- puffin -- */
+
+  Renderer.prototype.drawPuffin = function (world, s) {
+    var ctx = this.ctx;
+    var pu = world.puffin;
+
+    // Scarf trail.
+    ctx.lineCap = 'round';
+    for (var i = pu.trail.length - 1; i > 0; i--) {
+      var a = pu.trail[i], b = pu.trail[i - 1];
+      if (a.life <= 0) continue;
+      ctx.globalAlpha = Math.max(0, a.life) * 0.5;
+      ctx.strokeStyle = s.stageIdx === 2 ? '#8fd8ff' : '#2a8fd8';
+      ctx.lineWidth = 3 + (pu.trail.length - i) * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.save();
+    ctx.translate(pu.x, pu.y);
+    ctx.rotate(pu.rot);
+
+    if (pu.glow > 0.01) {
+      // Router power-up: steady GWI-blue halo, gentle 1.5 Hz pulse.
+      var pulse = 0.75 + Math.sin(s.time * 9) * 0.12;
+      var g = ctx.createRadialGradient(0, 0, 6, 0, 0, 62);
+      g.addColorStop(0, rgba('#2a8fd8', 0.55 * pu.glow * pulse));
+      g.addColorStop(1, rgba('#2a8fd8', 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, 62, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    var img = PF.getAsset('flying');
+    var w = C.puffin.spriteW, h = C.puffin.spriteH;
+    if (drawable(img)) {
+      ctx.drawImage(img, -w * 0.55, -h / 2, w, h);
+    } else {
+      // Vector fallback so the game is always playable, even if art fails.
+      ctx.fillStyle = '#1b1d21';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, w * 0.34, h * 0.36, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f7f9fb';
+      ctx.beginPath();
+      ctx.ellipse(6, 6, w * 0.24, h * 0.26, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f0872a';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.3, -4);
+      ctx.lineTo(w * 0.5, 2);
+      ctx.lineTo(w * 0.3, 8);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  PF.Renderer = Renderer;
+  PF.FONT = '"Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif';
+})(window.PF = window.PF || {});
+
+/* Puffin Flight — HUD and in-canvas overlays. */
+(function (PF) {
+  'use strict';
+
+  var C = PF.CONFIG;
+  var W = C.world.width;
+  var H = C.world.height;
+
+  /* HUD text is outlined rather than shadowed. Stage palettes flip between a
+   * near-white and a near-black HUD colour, and mid-transition the blend passes
+   * through a mid-tone that a shadow alone can't keep legible. */
+  function hudText(ctx, s, text, x, y, font) {
+    ctx.font = font;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = PF.luminance(s.palette.hud) > 0.55
+      ? 'rgba(6,20,30,0.62)'
+      : 'rgba(255,255,255,0.72)';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = s.palette.hud;
+    ctx.fillText(text, x, y);
+  }
+
+  PF.Renderer.prototype.drawHud = function (s) {
+    var ctx = this.ctx;
+    ctx.textBaseline = 'alphabetic';
+
+    // Score, top-left, as a connection speed.
+    ctx.textAlign = 'left';
+    hudText(ctx, s, 'S C O R E', 24, 40, '700 15px ' + PF.FONT);
+    hudText(ctx, s, PF.formatSpeed(s.score), 24, 78, '800 38px ' + PF.FONT);
+
+    // Stage name, top-right. Text, never colour alone.
+    ctx.textAlign = 'right';
+    hudText(ctx, s, 'S T A G E', W - 24, 40, '700 15px ' + PF.FONT);
+    hudText(ctx, s, s.stageName, W - 24, 74, '800 32px ' + PF.FONT);
+
+    // Buffering notice.
+    if (s.bufferTime > 0) {
+      ctx.textAlign = 'center';
+      var dots = 1 + (Math.floor(s.time * 2) % 3);
+      var msg = C.copy.buffering.replace('...', new Array(dots + 1).join('.'));
+      ctx.font = '700 22px ' + PF.FONT;
+      var tw = ctx.measureText(msg).width;
+      ctx.fillStyle = 'rgba(13,23,32,0.72)';
+      PF.roundRect(ctx, W / 2 - tw / 2 - 18, H - 92, tw + 36, 40, 12);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(msg, W / 2, H - 65);
+    }
+
+    // Router boost timer.
+    if (s.routerTime > 0) {
+      var frac = s.routerTime / C.router.duration;
+      ctx.fillStyle = 'rgba(13,23,32,0.45)';
+      PF.roundRect(ctx, W / 2 - 90, 26, 180, 12, 6);
+      ctx.fill();
+      ctx.fillStyle = '#2a8fd8';
+      PF.roundRect(ctx, W / 2 - 90, 26, 180 * frac, 12, 6);
+      ctx.fill();
+      ctx.textAlign = 'center';
+      hudText(ctx, s, 'ROUTER BOOST', W / 2, 56, '700 13px ' + PF.FONT);
+    }
+  };
+
+  /* "You've unlocked FLY!" — drawn big, and also announced in the DOM. */
+  PF.Renderer.prototype.drawBanner = function (s) {
+    if (s.bannerTime <= 0) return;
+    var ctx = this.ctx;
+    var total = C.transition.bannerTime;
+    var age = total - s.bannerTime;
+    // Ease in for 0.25s, hold, fade out over the last 0.5s.
+    var a = Math.min(1, age / 0.25) * Math.min(1, s.bannerTime / 0.5);
+    var rise = (1 - Math.min(1, age / 0.4)) * 24;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center';
+    ctx.font = '800 46px ' + PF.FONT;
+    var text = C.copy.unlocked(s.bannerStage);
+    var tw = ctx.measureText(text).width;
+    ctx.fillStyle = 'rgba(13,23,32,0.6)';
+    PF.roundRect(ctx, W / 2 - tw / 2 - 28, H / 2 - 66 + rise, tw + 56, 96, 18);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, W / 2, H / 2 - 18 + rise);
+    ctx.font = '600 19px ' + PF.FONT;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(s.bannerTagline, W / 2, H / 2 + 14 + rise);
+    ctx.restore();
+  };
+
+  /* One-shot white wash used for the surface splash. Single fade, no strobe. */
+  PF.Renderer.prototype.drawFlash = function (amount) {
+    if (amount <= 0.001) return;
+    var ctx = this.ctx;
+    ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.55, amount * 0.55) + ')';
+    ctx.fillRect(0, 0, W, H);
+  };
+
+  /* Dim the playfield behind the pause / game-over DOM panels. */
+  PF.Renderer.prototype.drawScrim = function (alpha) {
+    var ctx = this.ctx;
+    ctx.fillStyle = 'rgba(6,16,24,' + alpha + ')';
+    ctx.fillRect(0, 0, W, H);
+  };
+})(window.PF = window.PF || {});
+</script>
+<script>
+/* Puffin Flight — tiny WebAudio sound engine.
+ * No audio files: every sound is synthesised. Context is created lazily on the
+ * first user gesture so browsers don't block it, and everything is a no-op if
+ * WebAudio is unavailable.
+ */
+(function (PF) {
+  'use strict';
+
+  var ctx = null;
+  var master = null;
+  var muted = false;
+  var failed = false;
+
+  function ensure() {
+    if (ctx || failed) return ctx;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { failed = true; return null; }
+    try {
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.28;
+      master.connect(ctx.destination);
+    } catch (e) {
+      failed = true;
+      ctx = null;
+    }
+    return ctx;
+  }
+
+  /* One synth voice: osc -> gain envelope -> master. */
+  function tone(opts) {
+    if (muted || !ensure()) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    var t0 = ctx.currentTime + (opts.delay || 0);
+    var dur = opts.dur || 0.12;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = opts.type || 'sine';
+    osc.frequency.setValueAtTime(opts.from, t0);
+    if (opts.to && opts.to !== opts.from) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, opts.to), t0 + dur);
+    }
+    var peak = opts.gain == null ? 0.6 : opts.gain;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }
+
+  /* Short filtered noise burst — used for the splash and the wipeout. */
+  function noise(opts) {
+    if (muted || !ensure()) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    var dur = opts.dur || 0.3;
+    var t0 = ctx.currentTime + (opts.delay || 0);
+    var frames = Math.floor(ctx.sampleRate * dur);
+    var buf = ctx.createBuffer(1, frames, ctx.sampleRate);
+    var data = buf.getChannelData(0);
+    for (var i = 0; i < frames; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+    }
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    var filter = ctx.createBiquadFilter();
+    filter.type = opts.filter || 'lowpass';
+    filter.frequency.setValueAtTime(opts.freq || 900, t0);
+    if (opts.freqTo) filter.frequency.exponentialRampToValueAtTime(opts.freqTo, t0 + dur);
+    var gain = ctx.createGain();
+    gain.gain.setValueAtTime(opts.gain == null ? 0.35 : opts.gain, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+    src.start(t0);
+  }
+
+  PF.audio = {
+    /* Call from a real user gesture before playing anything. */
+    unlock: function () {
+      if (!ensure()) return;
+      if (ctx.state === 'suspended') ctx.resume();
+    },
+    isMuted: function () { return muted; },
+    toggleMute: function () {
+      muted = !muted;
+      if (master) master.gain.value = muted ? 0 : 0.28;
+      return muted;
+    },
+    flap: function () {
+      tone({ type: 'sine', from: 380, to: 620, dur: 0.09, gain: 0.28 });
+    },
+    fiber: function () {
+      tone({ type: 'triangle', from: 880, dur: 0.1, gain: 0.4 });
+      tone({ type: 'triangle', from: 1320, dur: 0.13, gain: 0.32, delay: 0.06 });
+    },
+    router: function () {
+      [523, 659, 784, 1047].forEach(function (f, i) {
+        tone({ type: 'triangle', from: f, dur: 0.16, gain: 0.34, delay: i * 0.06 });
+      });
+    },
+    buffer: function () {
+      // Deliberately unlovely: the sound of Big Cable.
+      [0, 0.18, 0.36].forEach(function (d) {
+        tone({ type: 'square', from: 180, to: 120, dur: 0.14, gain: 0.16, delay: d });
+      });
+    },
+    stageUp: function () {
+      [392, 523, 659].forEach(function (f, i) {
+        tone({ type: 'triangle', from: f, dur: 0.28, gain: 0.3, delay: i * 0.09 });
+      });
+    },
+    splash: function () {
+      noise({ dur: 0.5, freq: 2400, freqTo: 300, gain: 0.3 });
+    },
+    wipeout: function () {
+      tone({ type: 'sawtooth', from: 320, to: 90, dur: 0.45, gain: 0.22 });
+      noise({ dur: 0.45, freq: 1200, freqTo: 200, gain: 0.22, delay: 0.05 });
+    }
+  };
+})(window.PF = window.PF || {});
+</script>
+<script>
+/* Puffin Flight — main loop and state machine.
+ *
+ * States: title -> playing <-> paused -> wipeout -> over -> playing
+ * Physics are delta-time driven and sub-stepped, so a slow frame changes how
+ * smooth the game looks, never how it plays.
+ */
+(function (PF) {
+  'use strict';
+
+  var C = PF.CONFIG;
+  var W = C.world.width;
+  var H = C.world.height;
+  var STAGES = C.stages;
+  var MAX_STEP = 1 / 120;     // physics sub-step ceiling
+  var MAX_FRAME = 1 / 20;     // ignore anything slower (tab stalls, breakpoints)
+
+  var renderer, world, dom;
+  var reducedMotion = false;
+  var raf = 0;
+  var lastT = 0;
+
+  var S = {
+    mode: 'title',
+    score: 0,
+    peak: 0,
+    high: 0,
+    stageIdx: 0,
+    fromIdx: 0,
+    blend: 1,
+    time: 0,
+    bannerTime: 0,
+    bannerStage: '',
+    bannerTagline: '',
+    bufferTime: 0,
+    routerTime: 0,
+    flash: 0,
+    shake: 0,
+    wipeTime: 0,
+    nextSpawnAt: 0,
+    ambient: 0,
+    lastMilestone: 0,
+    newRecord: false,
+    lastDeath: null
+  };
+
+  /* ----------------------------------------------------------- high score -- */
+
+  function loadHigh() {
+    try {
+      var v = window.localStorage.getItem(C.scoring.highScoreKey);
+      return v ? Math.max(0, parseInt(v, 10) || 0) : 0;
+    } catch (e) { return 0; }   // private mode / storage disabled
+  }
+  function saveHigh(v) {
+    try { window.localStorage.setItem(C.scoring.highScoreKey, String(Math.floor(v))); } catch (e) {}
+  }
+
+  /* --------------------------------------------------------------- helpers -- */
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function stagePhysics() {
+    var a = STAGES[S.fromIdx], b = STAGES[S.stageIdx], t = S.blend;
+    return {
+      gravity: lerp(a.gravity, b.gravity, t),
+      flap: lerp(a.flap, b.flap, t),
+      maxFall: lerp(a.maxFall, b.maxFall, t),
+      maxRise: lerp(a.maxRise, b.maxRise, t)
+    };
+  }
+  function stageScroll() {
+    return lerp(STAGES[S.fromIdx].scroll, STAGES[S.stageIdx].scroll, S.blend);
+  }
+  function stageScoreRate() {
+    return lerp(STAGES[S.fromIdx].scoreRate, STAGES[S.stageIdx].scoreRate, S.blend);
+  }
+  function speedFactor() {
+    if (S.bufferTime > 0) return C.buffering.speedFactor;
+    if (S.routerTime > 0) return C.router.speedFactor;
+    return 1;
+  }
+  function currentPalette() {
+    return PF.blendPalette(STAGES[S.fromIdx].palette, STAGES[S.stageIdx].palette, S.blend);
+  }
+
+  function renderState() {
+    return {
+      palette: currentPalette(),
+      fromStage: STAGES[S.fromIdx],
+      toStage: STAGES[S.stageIdx],
+      stageIdx: S.stageIdx,
+      stageName: STAGES[S.stageIdx].id,
+      blend: S.blend,
+      distance: world.distance,
+      time: world.time,
+      score: S.score,
+      bannerTime: S.bannerTime,
+      bannerStage: S.bannerStage,
+      bannerTagline: S.bannerTagline,
+      bufferTime: S.bufferTime,
+      routerTime: S.routerTime,
+      reducedMotion: reducedMotion
+    };
+  }
+
+  /* ------------------------------------------------------------ transitions -- */
+
+  function enterStage(idx) {
+    var stage = STAGES[idx];
+    S.fromIdx = S.stageIdx;
+    S.stageIdx = idx;
+    S.blend = 0;
+    S.bannerTime = C.transition.bannerTime;
+    S.bannerStage = stage.id;
+    S.bannerTagline = stage.tagline;
+    PF.audio.stageUp();
+    announce(C.copy.unlocked(stage.id) + ' ' + stage.tagline);
+
+    if (stage.id === 'FLY') {
+      // Burst through the surface.
+      PF.audio.splash();
+      S.flash = 1;
+      if (!reducedMotion) {
+        world.emit('drop', world.puffin.x, world.puffin.y, 26, {
+          speed: 240, life: 0.7, size: 5, gravity: 700, color: '#dff6ff'
+        });
+        shake(0.5);
+      }
+    } else if (!reducedMotion) {
+      shake(0.35);
+    }
+  }
+
+  function shake(amount) {
+    if (reducedMotion) return;
+    S.shake = Math.max(S.shake, amount);
+  }
+
+  function announce(msg) {
+    if (dom.live) dom.live.textContent = msg;
+  }
+
+  /* ------------------------------------------------------------------ run -- */
+
+  function startRun() {
+    world.reset();
+    S.mode = 'playing';
+    S.score = 0;
+    S.peak = 0;
+    S.stageIdx = 0;
+    S.fromIdx = 0;
+    S.blend = 1;
+    S.time = 0;
+    S.bannerTime = 0;
+    S.bufferTime = 0;
+    S.routerTime = 0;
+    S.flash = 0;
+    S.shake = 0;
+    S.wipeTime = 0;
+    S.ambient = 0;
+    S.lastMilestone = 0;
+    S.newRecord = false;
+    S.nextSpawnAt = world.distance + 320;
+    showScreen(null);
+    dom.pauseBtn.hidden = false;
+    announce('Run started. Stage SWIM.');
+  }
+
+  function wipeout(reason) {
+    if (S.mode !== 'playing') return;
+    S.lastDeath = { reason: reason || 'unknown', score: Math.floor(S.score), stage: STAGES[S.stageIdx].id };
+    S.mode = 'wipeout';
+    S.wipeTime = 0.85;
+    PF.audio.wipeout();
+    shake(0.7);
+    var pu = world.puffin;
+    world.emit('star', pu.x, pu.y, reducedMotion ? 5 : 14, {
+      speed: 190, life: 0.9, size: 6, gravity: 260, color: '#ffd873'
+    });
+    world.emit('drop', pu.x, pu.y, reducedMotion ? 6 : 18, {
+      speed: 220, life: 0.7, size: 4, gravity: 520, color: '#eaf8ff'
+    });
+    dom.pauseBtn.hidden = true;
+  }
+
+  function gameOver() {
+    S.mode = 'over';
+    var final = Math.floor(S.score);
+    S.newRecord = final > S.high;
+    if (S.newRecord) {
+      S.high = final;
+      saveHigh(final);
+    }
+    var speed = PF.formatSpeed(final);
+    dom.finalSpeed.textContent = speed;
+    dom.overCopy.textContent = C.copy.gameOver(speed);
+    dom.overHigh.textContent = PF.formatSpeed(S.high);
+    dom.record.hidden = !S.newRecord;
+    dom.titleHigh.textContent = PF.formatSpeed(S.high);
+    dom.shareBtn.dataset.speed = speed;
+    dom.shareNote.textContent = '';
+    showScreen('over');
+    announce(C.copy.gameOverTitle + ' ' + C.copy.gameOver(speed));
+  }
+
+  function togglePause(force) {
+    if (S.mode === 'playing' && force !== false) {
+      S.mode = 'paused';
+      showScreen('paused');
+      announce('Paused.');
+    } else if (S.mode === 'paused' && force !== true) {
+      S.mode = 'playing';
+      showScreen(null);
+      announce('Resumed.');
+    }
+  }
+
+  /* ---------------------------------------------------------------- input -- */
+
+  function flap() {
+    PF.audio.unlock();
+    if (S.mode === 'title') {
+      startRun();
+      world.puffin.flap(stagePhysics());
+      PF.audio.flap();
+      return;
+    }
+    if (S.mode === 'over') {
+      startRun();
+      return;
+    }
+    if (S.mode === 'paused') { togglePause(false); return; }
+    if (S.mode !== 'playing') return;
+    world.puffin.flap(stagePhysics());
+    PF.audio.flap();
+    if (!reducedMotion) {
+      world.emit('drop', world.puffin.x - 26, world.puffin.y + 8, 3, {
+        speed: 70, life: 0.35, size: 3, angle: Math.PI * 0.9, arc: 0.8,
+        color: STAGES[S.stageIdx].id === 'SWIM' ? '#bff3ff' : '#ffffff'
+      });
+    }
+  }
+
+  function bindInput() {
+    // Bind to the whole viewport, not just the 16:9 frame: in portrait most of
+    // the screen is letterbox, and a thumb tap down there must still flap.
+    var surface = dom.root;
+
+    surface.addEventListener('pointerdown', function (e) {
+      if (e.target.closest && e.target.closest('button, a')) return;
+      e.preventDefault();
+      flap();
+    }, { passive: false });
+
+    // Block double-tap zoom / rubber-band scrolling over the playfield.
+    surface.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+    surface.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+    surface.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    surface.addEventListener('dblclick', function (e) { e.preventDefault(); });
+
+    window.addEventListener('keydown', function (e) {
+      if (e.repeat) return;
+      var k = e.key;
+      if (k === ' ' || k === 'Spacebar' || k === 'ArrowUp' || k === 'Up') {
+        // Let keyboard users still operate focused buttons with Space.
+        var tag = document.activeElement && document.activeElement.tagName;
+        if ((tag === 'BUTTON' || tag === 'A') && (k === ' ' || k === 'Spacebar')) return;
+        e.preventDefault();
+        flap();
+      } else if (k === 'p' || k === 'P') {
+        e.preventDefault();
+        togglePause();
+      } else if (k === 'Escape' && S.mode === 'playing') {
+        togglePause(true);
+      } else if (k === 'm' || k === 'M') {
+        setMuted(PF.audio.toggleMute());
+      }
+    });
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden && S.mode === 'playing') togglePause(true);
+    });
+    window.addEventListener('blur', function () {
+      if (S.mode === 'playing') togglePause(true);
+    });
+
+    dom.playBtn.addEventListener('click', function () { PF.audio.unlock(); startRun(); });
+    dom.againBtn.addEventListener('click', function () { PF.audio.unlock(); startRun(); });
+    dom.resumeBtn.addEventListener('click', function () { togglePause(false); });
+    dom.pauseBtn.addEventListener('click', function () { togglePause(); });
+    dom.soundBtn.addEventListener('click', function () {
+      PF.audio.unlock();
+      setMuted(PF.audio.toggleMute());
+    });
+    dom.shareBtn.addEventListener('click', share);
+
+    var resizeTimer = 0;
+    function onResize() {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(function () { renderer.resize(); }, 60);
+      renderer.resize();
+    }
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+  }
+
+  function setMuted(muted) {
+    dom.soundBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    dom.soundBtn.textContent = muted ? 'Sound off' : 'Sound on';
+  }
+
+  function share() {
+    var speed = dom.shareBtn.dataset.speed || PF.formatSpeed(S.score);
+    var url = location.href.split('#')[0];
+    var text = C.copy.share(speed, url);
+    if (navigator.share) {
+      navigator.share({ title: C.copy.shareTitle, text: text }).catch(function () {});
+      return;
+    }
+    var done = function () { dom.shareNote.textContent = 'Copied to clipboard!'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+    function fallbackCopy() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        done();
+      } catch (e) {
+        dom.shareNote.textContent = text;
+      }
+    }
+  }
+
+  /* --------------------------------------------------------------- screens -- */
+
+  function showScreen(name) {
+    dom.title.hidden = name !== 'title';
+    dom.over.hidden = name !== 'over';
+    dom.paused.hidden = name !== 'paused';
+    dom.pauseBtn.hidden = !(S.mode === 'playing' || S.mode === 'paused');
+  }
+
+  /* ---------------------------------------------------------------- update -- */
+
+  function step(dt) {
+    S.time += dt;
+
+    if (S.bannerTime > 0) S.bannerTime = Math.max(0, S.bannerTime - dt);
+    if (S.blend < 1) S.blend = Math.min(1, S.blend + dt / C.transition.blendTime);
+    if (S.flash > 0) S.flash = Math.max(0, S.flash - dt * 1.6);
+    if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 1.8);
+
+    if (S.mode === 'wipeout') {
+      world.update(dt, stageScroll() * 0.25, reducedMotion);
+      world.puffin.vy += 900 * dt;
+      world.puffin.y += world.puffin.vy * dt;
+      world.puffin.rot += dt * 3;
+      S.wipeTime -= dt;
+      if (S.wipeTime <= 0) gameOver();
+      return;
+    }
+
+    if (S.mode !== 'playing') {
+      // Idle scenery keeps moving gently behind the title / game-over panels.
+      world.update(dt, stageScroll() * 0.25, reducedMotion);
+      ambient(dt, stageScroll() * 0.25);
+      return;
+    }
+
+    var factor = speedFactor();
+    var scroll = stageScroll() * factor;
+
+    if (S.bufferTime > 0) S.bufferTime = Math.max(0, S.bufferTime - dt);
+    if (S.routerTime > 0) {
+      S.routerTime = Math.max(0, S.routerTime - dt);
+      world.puffin.glow = Math.min(1, S.routerTime / 0.4);
+    } else {
+      world.puffin.glow = 0;
+    }
+
+    // Score climbs with distance survived.
+    S.score += stageScoreRate() * factor * dt;
+    if (S.score > S.peak) S.peak = S.score;
+
+    // Stage is driven by peak score, so a buffering hit can't demote you.
+    var idx = PF.stageIndexFor(S.peak);
+    if (idx !== S.stageIdx) enterStage(idx);
+
+    // Subtle milestone shake once we're supersonic.
+    if (STAGES[S.stageIdx].id === 'SOAR') {
+      var milestone = Math.floor(S.peak / 500);
+      if (milestone > S.lastMilestone) {
+        S.lastMilestone = milestone;
+        shake(0.28);
+      }
+    }
+
+    var phys = stagePhysics();
+    world.puffin.update(dt, phys, S.bufferTime > 0 ? 0.85 : 1);
+    world.update(dt, scroll, reducedMotion);
+    ambient(dt, scroll);
+
+    // Distance-based spawning: slowing down never bunches obstacles up.
+    if (world.distance >= S.nextSpawnAt) {
+      var stage = STAGES[S.stageIdx];
+      world.spawnGroup(stage, Math.random);
+      S.nextSpawnAt = world.distance + stage.spawnInterval * stage.scroll;
+    }
+
+    // Ceiling is a soft stop; the floor ends the run.
+    if (world.puffin.y < 24) {
+      world.puffin.y = 24;
+      if (world.puffin.vy < 0) world.puffin.vy = 0;
+    }
+
+    var events = world.collide(S.routerTime > 0);
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      if (ev.type === 'lethal') { wipeout(ev.obj.variant || ev.obj.kind); return; }
+      if (ev.type === 'buffer') {
+        S.score = Math.max(0, S.score - C.scoring.bufferPenalty);
+        S.bufferTime = C.buffering.duration;
+        PF.audio.buffer();
+        announce(C.copy.buffering);
+        world.emit('drop', ev.obj.x, ev.obj.y, reducedMotion ? 4 : 12, {
+          speed: 120, life: 0.5, size: 4, color: '#9fb6cf'
+        });
+      } else if (ev.type === 'fiber') {
+        S.score += C.scoring.fiberBonus;
+        if (S.score > S.peak) S.peak = S.score;
+        PF.audio.fiber();
+        world.emit('drop', ev.obj.x, ev.obj.y, reducedMotion ? 4 : 12, {
+          speed: 150, life: 0.5, size: 3.5, color: '#8fe6ff'
+        });
+      } else if (ev.type === 'router') {
+        S.routerTime = C.router.duration;
+        PF.audio.router();
+        announce('Router boost!');
+        world.emit('drop', ev.obj.x, ev.obj.y, reducedMotion ? 5 : 16, {
+          speed: 190, life: 0.6, size: 4, color: '#2a8fd8'
+        });
+      }
+    }
+
+    if (world.outOfBounds()) wipeout(world.puffin.y > 0 ? 'floor' : 'ceiling');
+  }
+
+  /* Stage-flavoured ambient particles: bubbles under water, streaks up high. */
+  function ambient(dt, scroll) {
+    if (reducedMotion) return;
+    S.ambient -= dt;
+    if (S.ambient > 0) return;
+    var id = STAGES[S.stageIdx].id;
+    if (id === 'SWIM') {
+      S.ambient = 0.12;
+      world.emit('bubble', W + 20, Math.random() * H, 1, {
+        speed: 10, life: 3.2, size: 3.5, vx: -scroll * 0.55, vy: -40,
+        color: 'rgba(200,245,255,0.7)'
+      });
+    } else if (id === 'SOAR') {
+      S.ambient = 0.06;
+      world.emit('streak', W + 30, Math.random() * H, 1, {
+        speed: 0, life: 0.7, size: 3, vx: -scroll * 1.7, vy: 0,
+        color: 'rgba(255,255,255,0.5)'
+      });
+    } else {
+      S.ambient = 0.5;
+    }
+  }
+
+  /* ----------------------------------------------------------------- draw -- */
+
+  function draw() {
+    var s = renderState();
+    var ctx = renderer.ctx;
+    renderer.begin(s.palette.skyBottom);
+
+    if (S.shake > 0.001) {
+      var m = S.shake * 12;
+      ctx.translate((Math.random() * 2 - 1) * m, (Math.random() * 2 - 1) * m);
+    }
+
+    renderer.drawBackground(s);
+    renderer.drawObstacles(world, s);
+    renderer.drawPickups(world, s);
+
+    // Buffering makes the puffin stutter — a visible hitch, well under 3 Hz.
+    var stutter = 0;
+    if (S.bufferTime > 0) {
+      stutter = Math.sin(S.time * Math.PI * 2 * C.buffering.stutterHz) > 0.4 ? 6 : 0;
+    }
+    ctx.save();
+    ctx.translate(-stutter, 0);
+    renderer.drawPuffin(world, s);
+    ctx.restore();
+
+    renderer.drawParticles(world);
+    renderer.drawFlash(S.flash);
+
+    if (S.mode === 'playing' || S.mode === 'wipeout' || S.mode === 'paused') {
+      renderer.drawHud(s);
+      renderer.drawBanner(s);
+    }
+    if (S.mode === 'title' || S.mode === 'over' || S.mode === 'paused') {
+      renderer.drawScrim(S.mode === 'paused' ? 0.35 : 0.45);
+    }
+    renderer.end();
+  }
+
+  /* ----------------------------------------------------------------- loop -- */
+
+  function frame(now) {
+    raf = window.requestAnimationFrame(frame);
+    var dt = (now - lastT) / 1000;
+    lastT = now;
+    if (!(dt > 0)) return;
+    if (dt > MAX_FRAME) dt = MAX_FRAME;
+
+    // Sub-step so collisions stay honest even on a slow frame.
+    var remaining = dt;
+    while (remaining > 0) {
+      var d = remaining > MAX_STEP ? MAX_STEP : remaining;
+      step(d);
+      remaining -= d;
+    }
+    draw();
+  }
+
+  /* ----------------------------------------------------------------- boot -- */
+
+  PF.start = function (assetSources) {
+    dom = {
+      root: document.getElementById('pf-root'),
+      canvas: document.getElementById('pf-canvas'),
+      title: document.getElementById('pf-title'),
+      over: document.getElementById('pf-over'),
+      paused: document.getElementById('pf-paused'),
+      playBtn: document.getElementById('pf-play'),
+      againBtn: document.getElementById('pf-again'),
+      resumeBtn: document.getElementById('pf-resume'),
+      pauseBtn: document.getElementById('pf-pause'),
+      soundBtn: document.getElementById('pf-sound'),
+      shareBtn: document.getElementById('pf-share'),
+      shareNote: document.getElementById('pf-share-note'),
+      finalSpeed: document.getElementById('pf-final'),
+      overCopy: document.getElementById('pf-over-copy'),
+      overHigh: document.getElementById('pf-over-high'),
+      titleHigh: document.getElementById('pf-title-high'),
+      record: document.getElementById('pf-record'),
+      live: document.getElementById('pf-live')
+    };
+
+    var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    reducedMotion = !!(mq && mq.matches);
+    if (mq) {
+      var onMq = function (e) { reducedMotion = e.matches; };
+      if (mq.addEventListener) mq.addEventListener('change', onMq);
+      else if (mq.addListener) mq.addListener(onMq);
+    }
+
+    renderer = new PF.Renderer(dom.canvas);
+    world = PF.createWorld();
+    S.high = loadHigh();
+    dom.titleHigh.textContent = PF.formatSpeed(S.high);
+    setMuted(PF.audio.isMuted());
+
+    bindInput();
+    showScreen('title');
+    dom.pauseBtn.hidden = true;
+
+    PF.loadAssets(assetSources || {}, function () {
+      var pointing = PF.getAsset('pointing');
+      var thumbs = PF.getAsset('thumbsup');
+      var logo = PF.getAsset('logo');
+      if (pointing) document.getElementById('pf-art-pointing').src = pointing.src;
+      if (thumbs) document.getElementById('pf-art-thumbsup').src = thumbs.src;
+      if (logo) {
+        document.getElementById('pf-logo-title').src = logo.src;
+        document.getElementById('pf-logo-over').src = logo.src;
+      }
+    });
+
+    // Seed the title-screen scenery so it isn't an empty gradient.
+    for (var i = 0; i < 3; i++) world.spawnGroup(STAGES[0], Math.random);
+
+    lastT = window.performance.now();
+    raf = window.requestAnimationFrame(frame);
+  };
+
+  // Exposed for automated checks; not used by the game itself.
+  PF._debug = { state: S, getWorld: function () { return world; } };
+})(window.PF = window.PF || {});
+</script>
+<script>
+(function () {
+  function boot() { window.PF.start(window.PF_ASSETS); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>
