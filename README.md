@@ -1,8 +1,8 @@
 # Puffin Flight
 
 A one-button, family-friendly browser game for GWI, starring the puffin. Fly
-through **SWIM**, **FLY** and **SOAR** — the same names as GWI's residential
-plans — dodging Maine-flavoured obstacles and collecting fiber strands, while
+through **SWIM**, **FLY** and **SOAR** - the same names as GWI's residential
+plans - dodging Maine-flavoured obstacles and collecting fiber strands, while
 your score climbs in Mbps.
 
 Ships as **one self-contained file**: `dist/index.html`. No frameworks, no build
@@ -39,7 +39,7 @@ npx http-server . -p 8080     # then visit http://localhost:8080/src/
 
 Score is a connection speed. It climbs with distance survived, +25 Mbps per
 fiber strand, and flips from Mbps to Gbps at 1000. Your best run is kept in
-`localStorage` under `gwi-puffin-highscore` — that is the only thing the game
+`localStorage` under `gwi-puffin-highscore` - that is the only thing the game
 stores, and nothing ever leaves the browser.
 
 ### Stages
@@ -52,7 +52,7 @@ stores, and nothing ever leaves the browser.
 
 ### The Big Cable buffering wheel
 
-Touching the spinning "Big Cable" wheel does **not** end your run — it drains
+Touching the spinning "Big Cable" wheel does **not** end your run - it drains
 50 Mbps and leaves the puffin stuttering along for two seconds. It is a joke,
 not an obstacle, and it is the only thing in the game that punishes you without
 killing you.
@@ -74,7 +74,7 @@ puffin-flight/
 │   ├── render.js      canvas drawing, parallax, HUD
 │   ├── audio.js       WebAudio chimes (no audio files)
 │   └── game.js        state machine, loop, input, scoring
-├── assets/            artwork (placeholder SVGs — see below)
+├── assets/            artwork (placeholder SVGs - see below)
 ├── tools/             headless test harnesses (dev only, not shipped)
 └── dist/index.html    ← the deliverable
 ```
@@ -84,7 +84,7 @@ any container, so the same build works in portrait, landscape, on desktop and
 inside an iframe.
 
 On a portrait phone the 16:9 playfield can only be as tall as the screen is
-wide, so it sits in a letterboxed band with dark space above and below — as the
+wide, so it sits in a letterboxed band with dark space above and below - as the
 spec calls for. Taps anywhere on the screen (letterbox included) flap, so the
 game still plays one-handed. A portrait-native playfield with its own obstacle
 spacing would use the full screen and is a good v2 candidate.
@@ -94,7 +94,7 @@ spacing would use the full screen and is a good v2 candidate.
 ## Tuning
 
 Everything a non-developer would want to change is in one object at the top of
-`src/stages.js` — gap sizes, scroll speeds, gravity, flap strength, spawn
+`src/stages.js` - gap sizes, scroll speeds, gravity, flap strength, spawn
 rates, stage thresholds, palettes, and all player-facing copy. No game logic
 lives in that file. Change a number, run `node build.js`, reload.
 
@@ -127,7 +127,7 @@ they need swapping before launch:
 1. Drop the production art into `assets/` using these base names:
    `puffin-flying`, `puffin-pointing`, `puffin-thumbsup`,
    `puffin-fiber-strand`, `gwi-logo`.
-2. `build.js` prefers `.png`, then `.webp`, then `.svg` for each name — so
+2. `build.js` prefers `.png`, then `.webp`, then `.svg` for each name - so
    adding `puffin-flying.png` takes over from the placeholder SVG with no code
    change.
 3. Run `node build.js`.
@@ -138,7 +138,7 @@ the result makes zero network requests.
 
 Brand colours are CSS custom properties at the top of `src/styles.css`
 (`--gwi-blue` and friends) plus the per-stage `palette` blocks in
-`src/stages.js`. They are reasonable approximations — replace them with the
+`src/stages.js`. They are reasonable approximations - replace them with the
 exact hex values from the live site CSS.
 
 ---
@@ -166,7 +166,7 @@ to the network.
   particle effects, and the CSS animations.
 - Stage, score, buffering and boost states are all readable as text, never
   colour alone.
-- Nothing flashes faster than 3 Hz — the buffering stutter runs at 2.5 Hz and
+- Nothing flashes faster than 3 Hz - the buffering stutter runs at 2.5 Hz and
   the surface splash is a single fade.
 - Screens are real DOM elements with focusable buttons; stage changes and run
   outcomes are announced through an `aria-live` region.
@@ -176,7 +176,7 @@ to the network.
 
 ## Testing
 
-Headless harnesses live in `tools/` and are development-only — they are not
+Headless harnesses live in `tools/` and are development-only - they are not
 part of the build or the deliverable. They need Chromium via Playwright.
 
 ```bash
