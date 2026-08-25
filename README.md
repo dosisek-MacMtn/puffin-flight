@@ -120,9 +120,10 @@ puffin down (buffering) never bunches obstacles together.
 
 ## Artwork: placeholders in, brand art out
 
-**The artwork in `assets/` is placeholder, drawn for this repo, not GWI
-brand art.** This build could not reach `gwi.net` to fetch the real files, so
-they need swapping before launch:
+The GWI logo is now the real brand asset. **The four puffin images in
+`assets/` are still placeholder, drawn for this repo, not GWI brand art** -
+this build could not reach `gwi.net` to fetch the real files, so they need
+swapping before launch:
 
 1. Drop the production art into `assets/` using these base names:
    `puffin-flying`, `puffin-pointing`, `puffin-thumbsup`,
@@ -147,10 +148,45 @@ If the embedded art would exceed ~300 KB, the build automatically writes
 `dist/assets/` and references the files instead of inlining them. Either way
 the result makes zero network requests.
 
-Brand colours are CSS custom properties at the top of `src/styles.css`
-(`--gwi-blue` and friends) plus the per-stage `palette` blocks in
-`src/stages.js`. They are reasonable approximations - replace them with the
-exact hex values from the live site CSS.
+### The logo file
+
+The uploaded logo arrived as a 320x320 PNG with a painted white background, so
+it showed as a white box on the game's dark screens. `assets/gwi-logo.png` is
+now a transparent, trimmed version (284x178); the untouched upload is kept as
+`assets/gwi-logo-source.png`.
+
+Its grey "GREAT WORKS INTERNET" tagline (#757374) also measured only 3.33:1
+against the title screen's background, so the tagline is recoloured white
+(15.68:1). The blue mark is untouched. Both steps, reproducible from the
+original upload:
+
+```bash
+node tools/dewhite.js assets/gwi-logo-source.png /tmp/logo-clear.png --pad=2
+node tools/recolor.js /tmp/logo-clear.png assets/gwi-logo.png "#757374" "#ffffff"
+```
+
+`tools/dewhite.js` recovers real per-pixel alpha rather than keying out
+near-white, so antialiased edges stay clean with no pale fringe. Run it on any
+brand PNG that arrives with a white background. `tools/recolor.js` remaps one
+colour family while preserving alpha.
+
+Note that recolouring the tagline is a local edit to brand art. If GWI has an
+official reverse/white logo, upload it as `gwi-logo.png` and the recolour step
+can be dropped - worth asking for alongside the puffin art. Black was
+considered and rejected: it measures 1.34:1 on that background, effectively
+invisible.
+
+### Brand colours
+
+Sampled from the uploaded logo: the mark is **#35b7ff**, the tagline
+**#757374**. Both are recorded in `src/styles.css`.
+
+The buttons deliberately still use a darker blue (`--gwi-blue`, #1a6fb5):
+white text on #35b7ff is about 2:1 contrast, well below the 4.5:1 accessibility
+minimum. Using the true brand blue on buttons means switching their text to
+dark - a brand call rather than a code one. Per-stage palettes in
+`src/stages.js` are still approximations pending the exact values from the live
+site CSS.
 
 ---
 

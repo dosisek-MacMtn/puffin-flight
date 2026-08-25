@@ -4,8 +4,15 @@
  */
 
 :root {
-  --gwi-blue: #1a6fb5;        /* TODO(brand): confirm against live gwi.net CSS */
+  /* Sampled from the uploaded logo: the mark is #35b7ff, its tagline #757374.
+   * The button surfaces below stay darker on purpose - white text on #35b7ff
+   * lands around 2:1 contrast, well under the 4.5:1 minimum. Switching the
+   * buttons to the true brand blue means dark text on them; that is a brand
+   * call, so it is flagged in the README rather than made here. */
+  --gwi-blue: #1a6fb5;
   --gwi-blue-light: #2a8fd8;
+  --gwi-logo-blue: #35b7ff;
+  --gwi-logo-grey: #757374;
   --gwi-ink: #0d1720;
   --gwi-paper: #f7fbff;
   --gwi-orange: #f0872a;
