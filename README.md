@@ -120,7 +120,7 @@ puffin down (buffering) never bunches obstacles together.
 
 ## Artwork: placeholders in, brand art out
 
-**The five images in `assets/` are placeholders drawn for this repo, not GWI
+**The artwork in `assets/` is placeholder, drawn for this repo, not GWI
 brand art.** This build could not reach `gwi.net` to fetch the real files, so
 they need swapping before launch:
 
@@ -137,7 +137,7 @@ The quickest way to get a file in is GitHub itself: on the working branch, open
 `gwi-logo` currently ships as a rasterized placeholder PNG, so uploading a real
 `gwi-logo.png` replaces it directly.
 
-Prefer SVG where you have it — the logo renders between 78 and 168 px wide
+Prefer SVG where you have it - the logo renders between 78 and 168 px wide
 depending on the viewport, so a vector stays crisp and costs less. `.svg` is
 the last format `build.js` looks for, so remove the matching `.png` when you
 want the vector to win. To go the other way, `node tools/rasterize.js <base>
