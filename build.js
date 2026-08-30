@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const ROOT = __dirname;
 const SRC = path.join(ROOT, 'src');
@@ -103,6 +104,58 @@ function build() {
 
   const kb = (Buffer.byteLength(html) / 1024).toFixed(1);
   console.log(`Built ${path.relative(ROOT, out)} — ${kb} KB, art ${inlineArt ? 'inlined' : 'copied to dist/assets/'}`);
+
+  buildPwa(html);
+}
+
+/* The installable app needs real URLs: a manifest and a service worker cannot
+ * be inlined into the page. index.html itself stays self-contained, so an
+ * iframe embed still works with these files absent - a manifest is only
+ * fetched for a top-level page. */
+function buildPwa(html) {
+  const swSrc = read(path.join(SRC, 'sw.js'));
+  const manifestSrc = read(path.join(SRC, 'manifest.webmanifest'));
+  // Cache name tracks everything that ships, so any change to the page, the
+  // worker or the manifest lands in a fresh cache and retires the old one.
+  const version = crypto.createHash('sha1')
+    .update(html).update(swSrc).update(manifestSrc)
+    .digest('hex').slice(0, 8);
+
+  fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), manifestSrc);
+
+  const sw = swSrc.replace(/__CACHE_VERSION__/g, version);
+  if (sw.includes('__CACHE_VERSION__')) throw new Error('Cache version not substituted in sw.js');
+  fs.writeFileSync(path.join(DIST, 'sw.js'), sw);
+
+  const iconSrc = path.join(ASSETS, 'icons');
+  const iconOut = path.join(DIST, 'icons');
+  if (!fs.existsSync(iconSrc)) {
+    throw new Error('Missing assets/icons/ — run: node tools/make-icons.js');
+  }
+  fs.mkdirSync(iconOut, { recursive: true });
+  const icons = fs.readdirSync(iconSrc).filter((f) => f.endsWith('.png'));
+  for (const f of icons) fs.copyFileSync(path.join(iconSrc, f), path.join(iconOut, f));
+
+  // Everything the worker precaches must actually exist, or install fails and
+  // the app silently never goes offline.
+  const manifest = JSON.parse(read(path.join(DIST, 'manifest.webmanifest')));
+  const precached = sw.match(/'\.\/[^']*'/g).map((s) => s.slice(3, -1)).filter(Boolean);
+  for (const rel of precached) {
+    if (!fs.existsSync(path.join(DIST, rel))) {
+      throw new Error(`Service worker precaches a missing file: ${rel}`);
+    }
+  }
+  for (const icon of manifest.icons) {
+    if (!fs.existsSync(path.join(DIST, icon.src))) {
+      throw new Error(`Manifest references a missing icon: ${icon.src}`);
+    }
+  }
+
+  const total = [...icons.map((f) => path.join(iconOut, f)),
+    path.join(DIST, 'sw.js'), path.join(DIST, 'manifest.webmanifest')]
+    .reduce((n, f) => n + fs.statSync(f).size, 0);
+  console.log(`PWA — manifest, service worker (cache ${version}) and ${icons.length} icons, ` +
+    `${(total / 1024).toFixed(1)} KB`);
 }
 
 build();

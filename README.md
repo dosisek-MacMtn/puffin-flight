@@ -5,8 +5,11 @@ through **SWIM**, **FLY** and **SOAR** - the same names as GWI's residential
 plans - dodging Maine-flavoured obstacles and collecting fiber strands, while
 your score climbs in Mbps.
 
-Ships as **one self-contained file**: `dist/index.html`. No frameworks, no build
-step at runtime, no network requests, no tracking, no cookies.
+The game itself is **one self-contained file**, `dist/index.html` - no
+frameworks, no runtime build step, no tracking, no cookies. Alongside it the
+build emits a manifest, a service worker and app icons, which make it an
+**installable PWA that plays offline**. No frameworks, no runtime build step,
+no tracking, no cookies.
 
 ---
 
@@ -76,8 +79,16 @@ puffin-flight/
 │   └── game.js        state machine, loop, input, scoring
 ├── assets/            artwork (placeholder SVGs - see below)
 ├── tools/             headless test harnesses (dev only, not shipped)
-└── dist/index.html    ← the deliverable
+└── dist/
+    ├── index.html     ← the game, entirely self-contained
+    ├── manifest.webmanifest
+    ├── sw.js          ← offline cache, versioned per build
+    └── icons/         ← app icons (192, 512, maskable, apple-touch)
 ```
+
+`index.html` still stands alone: everything the game needs is inlined, and the
+PWA files only matter when the whole folder is hosted. Deploy the folder to get
+an installable app; copy the single file to embed the game somewhere.
 
 The game draws into a fixed 960×540 logical playfield and scales that to fit
 any container, so the same build works in portrait, landscape, on desktop and
@@ -190,10 +201,45 @@ site CSS.
 
 ---
 
+## Install it on your phone
+
+A PWA can only be installed from an HTTPS origin, so the game needs hosting
+first. `.github/workflows/pages.yml` builds from source and publishes `dist/`
+to GitHub Pages on every push.
+
+1. One-time: repository **Settings -> Pages -> Source: GitHub Actions**.
+2. Push (or run the workflow manually from the Actions tab).
+3. Open `https://<owner>.github.io/<repo>/` on your phone.
+4. **Android/Chrome:** menu -> *Install app* (or the install prompt).
+   **iPhone/Safari:** Share -> *Add to Home Screen*.
+
+It launches fullscreen with no browser chrome, and works with no signal after
+the first visit - the service worker precaches the game, and the high score
+lives in `localStorage` either way.
+
+Any HTTPS static host works the same way; `start_url` and `scope` are relative,
+so serving from a subdirectory (as Pages does) is fine.
+
+### PWA details worth knowing
+
+- **Orientation is locked to landscape** (`manifest.webmanifest`), because the
+  16:9 playfield is heavily letterboxed in portrait. Change `"orientation"` to
+  `"any"` to allow both. iOS ignores this and lets the phone rotate.
+- **iOS** treats `display: fullscreen` as `standalone` (a thin status bar
+  remains) and uses `apple-touch-icon`, not the manifest icons. Both are set.
+  Install on iOS only works from Safari.
+- **Updates** ship on the next launch: the cache name carries a hash of the
+  built page, so a new build installs into a fresh cache and the old one is
+  deleted.
+- **App icons** are generated from the puffin art by
+  `node tools/make-icons.js`, which writes `assets/icons/`. Re-run it when the
+  real puffin art lands - the icons are the placeholder puffin today. The
+  build copies them and fails loudly if an icon the manifest names is missing.
+
 ## Embedding
 
-The whole game is one file, so hosting it at `gwi.net/play` is a file copy.
-To embed it elsewhere:
+The whole game is one file, so hosting it at `gwi.net/play` is a file copy
+(copy the folder if you also want the installable app). To embed it elsewhere:
 
 ```html
 <iframe src="/play/" title="Puffin Flight"
@@ -203,7 +249,9 @@ To embed it elsewhere:
 
 The game fills its container and letterboxes to 16:9, so give the iframe any
 size you like. It never navigates the parent page, opens popups, or calls out
-to the network.
+to the network. An embedded copy deliberately registers **no** service worker
+and pulls no manifest, so dropping it into a page cannot install anything on
+the host origin - there is a test for exactly that.
 
 ---
 
@@ -232,7 +280,13 @@ node tools/smoke.js       # acceptance checks: errors, requests, stages,
 node tools/probe.js 90    # difficulty probe: plays for 90s, reports how runs end
 node tools/trace.js       # dumps the last frames before each death (tuning)
 node tools/shots.js       # writes stills of every screen to tools/shots/
+node tools/make-icons.js  # regenerate app icons from the puffin art
 ```
+
+The acceptance run covers the PWA too: the worker registers and activates, the
+game loads with the network genuinely cut off, the manifest carries everything
+an install prompt needs, every icon matches its declared size, and an iframe
+embed installs nothing.
 
 `tools/pilot.js` is the shared autopilot the harnesses use. It plays like a
 competent human rather than a perfect solver, so `probe.js` output is a

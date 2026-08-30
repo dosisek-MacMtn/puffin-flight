@@ -1,0 +1,21 @@
+{
+  "name": "Puffin Flight",
+  "short_name": "Puffin",
+  "description": "A one-button game from GWI. Fly the puffin, dodge the buoys, collect fiber. Swim, Fly, Soar.",
+  "start_url": "./",
+  "scope": "./",
+  "id": "gwi-puffin-flight",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#061018",
+  "theme_color": "#0b6b6e",
+  "categories": ["games", "entertainment"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

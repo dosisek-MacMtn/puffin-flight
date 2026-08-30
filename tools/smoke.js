@@ -35,9 +35,14 @@ function serve() {
       if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
         res.writeHead(404); res.end('not found'); return;
       }
-      const ext = path.extname(file);
+      const TYPES = {
+        '.html': 'text/html', '.svg': 'image/svg+xml', '.png': 'image/png',
+        '.js': 'text/javascript', '.webmanifest': 'application/manifest+json',
+        '.json': 'application/json'
+      };
       res.writeHead(200, {
-        'Content-Type': ext === '.html' ? 'text/html' : ext === '.svg' ? 'image/svg+xml' : 'application/octet-stream'
+        'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream',
+        'Cache-Control': 'no-cache'
       });
       res.end(fs.readFileSync(file));
     });
@@ -73,8 +78,11 @@ function check(name, ok, detail) {
   check('boots with no console errors', errors.length === 0, errors.join(' | '));
   const offsite = requests.filter((u) => !u.startsWith(base));
   check('zero external network requests', offsite.length === 0, offsite.join(', '));
-  check('single request for the whole game', requests.length === 1,
-    requests.length + ' request(s): ' + requests.map((u) => u.replace(base, '') || '/').join(' '));
+  const paths = requests.map((u) => u.replace(base, '') || '/');
+  const gameCode = paths.filter((p) => /\.(js|css)$/.test(p) && p !== '/sw.js');
+  check('game code and art stay inlined (extra requests are PWA files only)',
+    gameCode.length === 0 && paths.every((p) => /^\/(|index\.html|sw\.js|manifest\.webmanifest|icons\/.*)$/.test(p)),
+    paths.join(' '));
 
   // ---- score formatting (Mbps -> Gbps at 1000) ----
   const fmt = await page.evaluate(() => [0, 742, 999, 1000, 1234, 2000].map((n) => window.PF.formatSpeed(n)));
@@ -294,6 +302,97 @@ function check(name, ok, detail) {
     return window.PF._debug.state.mode;
   });
   check('auto-pauses when the tab is hidden', autoPaused === 'paused', 'mode ' + autoPaused);
+
+  // ---- PWA: worker, offline, manifest, icons ----
+  const pwaCtx = await browser.newContext({ viewport: { width: 900, height: 640 } });
+  const pwa = await pwaCtx.newPage();
+  const pwaErrors = [];
+  pwa.on('pageerror', (e) => pwaErrors.push(e.message));
+  await pwa.goto(base + '/', { waitUntil: 'load' });
+
+  const swState = await pwa.evaluate(async () => {
+    const reg = await navigator.serviceWorker.ready;
+    const sw = reg.active;
+    // `ready` resolves as soon as there IS an active worker, which may still
+    // be in 'activating'. Wait for it to finish before judging it.
+    if (sw && sw.state !== 'activated') {
+      await new Promise((resolve) => {
+        const done = () => { if (sw.state === 'activated') { sw.removeEventListener('statechange', done); resolve(); } };
+        sw.addEventListener('statechange', done);
+        setTimeout(resolve, 5000);
+      });
+    }
+    return { active: !!sw, state: sw && sw.state, scope: reg.scope };
+  });
+  check('service worker registers and activates',
+    swState.active && swState.state === 'activated' && pwaErrors.length === 0,
+    `${swState.state} at ${swState.scope}`);
+
+  // Genuinely offline: cut the network and reload.
+  await pwaCtx.setOffline(true);
+  await pwa.reload({ waitUntil: 'load' });
+  const offline = await pwa.evaluate(() => ({
+    booted: !!(window.PF && window.PF._debug),
+    title: !document.getElementById('pf-title').hidden,
+    canvas: document.getElementById('pf-canvas').width > 0,
+    online: navigator.onLine
+  }));
+  check('plays offline after one visit',
+    offline.booted && offline.title && offline.canvas && offline.online === false,
+    JSON.stringify(offline));
+  await pwaCtx.setOffline(false);
+
+  const manifest = await pwa.evaluate(async () => {
+    const href = document.querySelector('link[rel=manifest]').href;
+    return { href, json: await (await fetch(href)).json() };
+  });
+  const m = manifest.json;
+  const sizes = (m.icons || []).map((i) => i.sizes);
+  const maskable = (m.icons || []).some((i) => (i.purpose || '').includes('maskable'));
+  check('manifest has everything an install prompt needs',
+    !!m.name && !!m.short_name && !!m.start_url && !!m.display &&
+    sizes.includes('192x192') && sizes.includes('512x512') && maskable &&
+    /^#/.test(m.background_color || '') && /^#/.test(m.theme_color || ''),
+    `${m.name} / ${m.short_name}, ${m.display}, icons ${sizes.join('+')}${maskable ? ' +maskable' : ' (NO maskable)'}`);
+
+  const iconCheck = await pwa.evaluate(async (icons) => {
+    const out = [];
+    for (const ic of icons) {
+      const img = new Image();
+      img.src = new URL(ic.src, location.href).href;
+      try { await img.decode(); } catch (e) { out.push(ic.src + ' FAILED'); continue; }
+      const want = ic.sizes.split('x').map(Number);
+      if (img.naturalWidth !== want[0] || img.naturalHeight !== want[1]) {
+        out.push(`${ic.src} is ${img.naturalWidth}x${img.naturalHeight}, manifest says ${ic.sizes}`);
+      }
+    }
+    return out;
+  }, m.icons);
+  check('icons load at the sizes the manifest declares', iconCheck.length === 0, iconCheck.join('; '));
+
+  const appleIcon = await pwa.evaluate(async () => {
+    const l = document.querySelector('link[rel="apple-touch-icon"]');
+    if (!l) return 'missing';
+    const r = await fetch(l.href);
+    return r.ok ? 'ok' : 'HTTP ' + r.status;
+  });
+  check('iOS home-screen icon is present', appleIcon === 'ok', String(appleIcon));
+  await pwaCtx.close();
+
+  // ---- an embedded copy must not install anything on the host origin ----
+  const embedCtx = await browser.newContext({ viewport: { width: 800, height: 600 } });
+  const embedPage = await embedCtx.newPage();
+  const embedReqs = [];
+  embedPage.on('request', (r) => embedReqs.push(r.url().replace(base, '')));
+  await embedPage.goto(base + '/embed', { waitUntil: 'load' });
+  await embedPage.waitForTimeout(1500);
+  const embedState = await embedPage.evaluate(async () => ({
+    regs: (await navigator.serviceWorker.getRegistrations()).length
+  }));
+  check('iframe embed registers no service worker and fetches no manifest',
+    embedState.regs === 0 && !embedReqs.some((u) => u.includes('manifest')),
+    `${embedState.regs} registration(s), requests: ${embedReqs.join(' ')}`);
+  await embedCtx.close();
 
   await browser.close();
   server.close();
