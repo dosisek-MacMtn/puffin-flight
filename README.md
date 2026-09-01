@@ -208,8 +208,10 @@ first. `.github/workflows/pages.yml` builds from source and publishes `dist/`
 to GitHub Pages on every push.
 
 1. One-time: repository **Settings -> Pages -> Source: GitHub Actions**.
+   Until this is set, the deploy fails at the `configure-pages` step.
 2. Push (or run the workflow manually from the Actions tab).
-3. Open `https://<owner>.github.io/<repo>/` on your phone.
+3. Open the live site on your phone:
+   **https://dosisek-macmtn.github.io/puffin-flight/**
 4. **Android/Chrome:** menu -> *Install app* (or the install prompt).
    **iPhone/Safari:** Share -> *Add to Home Screen*.
 
